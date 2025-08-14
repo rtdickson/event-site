@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pine Grove Gatherings - Admin</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="admin-password-prompt" style="display: none;">
+        <h2>Enter Admin Password</h2>
+        <input type="password" id="admin-password-input" placeholder="Admin Password">
+        <button onclick="checkAdminPassword()">Submit</button>
+        <p id="admin-password-error" style="color: red;"></p>
+    </div>
+    <div id="admin-content" style="display: none;">
+        <header>
+            <h1>Admin Dashboard</h1>
+            <nav>
+                <a href="index.html">Back to Main</a>
+            </nav>
+        </header>
+        <main>
+            <section id="rsvps">
+                <h2>RSVPs</h2>
+                <table id="rsvp-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Attending</th>
+                            <th>Guests</th>
+                            <th>Bringing</th>
+                            <th>Notes</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </section>
+        </main>
+        <footer>
+            <p>Private admin | Questions? Text [Your Name] at [Your Number]</p>
+        </footer>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <script src="script-admin.js"></script>
+</body>
+</html>
