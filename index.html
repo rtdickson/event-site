@@ -11,6 +11,7 @@
     <div id="password-prompt" style="display: none;">
         <h2>Enter Password</h2>
         <input type="password" id="password-input" placeholder="Password">
+        <br>
         <button onclick="checkPassword()">Submit</button>
         <p id="password-error" style="color: red;"></p>
     </div>
@@ -51,6 +52,8 @@
                 <form id="rsvp-form">
                     <label for="name">Name:</label>
                     <input type="text" id="name" required>
+                    <label for="phone">Phone Number:</label>
+                    <input type="tel" id="phone" required>
                     <label for="attending">Attending?</label>
                     <select id="attending" required>
                         <option value="Yes">Yes</option>
@@ -59,13 +62,22 @@
                     </select>
                     <label for="guests">Number of Guests:</label>
                     <input type="number" id="guests" min="0" value="1">
-                    <label for="bringing">What are you bringing? (Optional):</label>
-                    <input type="text" id="bringing">
                     <label for="notes">Dietary Notes:</label>
                     <textarea id="notes"></textarea>
                     <button type="submit">Submit RSVP</button>
                 </form>
                 <p id="form-message"></p>
+            </section>
+            <section id="guest-list-request">
+                <h2>Request Guest List</h2>
+                <p>Want to see who's coming? Submit your phone number below, and we'll send you the current guest list.</p>
+                <form id="guest-list-form" style="display: none;">
+                    <label for="request-phone">Phone Number:</label>
+                    <input type="tel" id="request-phone" required>
+                    <button type="submit">Submit Request</button>
+                </form>
+                <button onclick="document.getElementById('guest-list-form').style.display='block'; this.style.display='none';">Request Guest List</button>
+                <p id="request-message"></p>
             </section>
         </main>
         <footer>

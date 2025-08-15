@@ -35,19 +35,19 @@ document.addEventListener('DOMContentLoaded', () => {
 document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('name').value;
+    const phone = document.getElementById('phone').value;
     const attending = document.getElementById('attending').value;
     const guests = document.getElementById('guests').value;
-    const bringing = document.getElementById('bringing').value;
     const notes = document.getElementById('notes').value;
     const messageEl = document.getElementById('form-message');
-    const eventName = 'dinner-party'; // Change this for each event
+    const eventCollection = 'rsvps-dinner-party'; // Change for each event
 
     try {
-        await db.collection(`rsvps-${eventName}`).add({
+        await db.collection(eventCollection).add({
             name,
+            phone,
             attending,
             guests: parseInt(guests),
-            bringing,
             notes,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
@@ -56,6 +56,26 @@ document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
         document.getElementById('rsvp-form').reset();
     } catch (error) {
         messageEl.textContent = 'Error submitting RSVP. Try again.';
+        messageEl.style.color = 'red';
+    }
+});
+
+document.getElementById('guest-list-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const phone = document.getElementById('request-phone').value;
+    const messageEl = document.getElementById('request-message');
+    try {
+        await db.collection('guest-list-requests').add({
+            phone,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        messageEl.textContent = 'Request submitted! You will receive the guest list soon.';
+        messageEl.style.color = 'green';
+        document.getElementById('guest-list-form').reset();
+        document.getElementById('guest-list-form').style.display = 'none';
+        document.querySelector('#guest-list-request button').style.display = 'block';
+    } catch (error) {
+        messageEl.textContent = 'Error submitting request. Try again.';
         messageEl.style.color = 'red';
     }
 });

@@ -19,6 +19,7 @@ function checkAdminPassword() {
         document.getElementById('admin-password-prompt').style.display = 'none';
         document.getElementById('admin-content').style.display = 'block';
         loadRSVPs();
+        loadGuestListRequests();
     } else {
         errorEl.textContent = 'Incorrect admin password. Try again.';
     }
@@ -35,15 +36,15 @@ async function loadRSVPs() {
 
     for (const eventName of events) {
         const groupDiv = document.createElement('div');
-        groupDiv.innerHTML = `<h3>${eventName.charAt(0).toUpperCase() + eventName.slice(1)} RSVPs</h3>
-            <button onclick="deleteAllForEvent('${eventName}')">Delete All for ${eventName}</button>
+        groupDiv.innerHTML = `<h3>${eventName.charAt(0).toUpperCase() + eventName.slice(1).replace('-', ' ')} RSVPs</h3>
+            <button onclick="deleteAllForEvent('rsvps-${eventName}')">Delete All for This Event</button>
             <table id="rsvp-table-${eventName}">
                 <thead>
                     <tr>
                         <th>Name</th>
+                        <th>Phone</th>
                         <th>Attending</th>
                         <th>Guests</th>
-                        <th>Bringing</th>
                         <th>Notes</th>
                         <th>Timestamp</th>
                         <th>Action</th>
@@ -61,44 +62,75 @@ async function loadRSVPs() {
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${data.name}</td>
+                    <td>${data.phone || ''}</td>
                     <td>${data.attending}</td>
                     <td>${data.guests}</td>
-                    <td>${data.bringing || ''}</td>
                     <td>${data.notes || ''}</td>
                     <td>${data.timestamp ? data.timestamp.toDate().toLocaleString() : ''}</td>
-                    <td><button onclick="deleteRSVP('${doc.id}', '${eventName}')">Delete</button></td>
+                    <td><button onclick="deleteRSVP('${doc.id}', 'rsvps-${eventName}')">Delete</button></td>
                 `;
                 tableBody.appendChild(row);
             });
         } catch (error) {
-            console.error(`Error loading RSVPs for ${eventName}:`, error);
+            console.error(`Error loading RSVPs for rsvps-${eventName}:`, error);
         }
     }
 }
 
-async function deleteRSVP(id, eventName) {
+async function deleteRSVP(id, collectionName) {
     if (confirm('Delete this RSVP?')) {
         try {
-            await db.collection(`rsvps-${eventName}`).doc(id).delete();
-            loadRSVPs(); // Refresh
+            await db.collection(collectionName).doc(id).delete();
+            loadRSVPs();
         } catch (error) {
             console.error('Error deleting RSVP:', error);
         }
     }
 }
 
-async function deleteAllForEvent(eventName) {
-    if (confirm(`Delete all RSVPs for ${eventName}?`)) {
+async function deleteAllForEvent(collectionName) {
+    if (confirm(`Delete all RSVPs for ${collectionName.replace('rsvps-', '').replace('-', ' ')}?`)) {
         try {
-            const snapshot = await db.collection(`rsvps-${eventName}`).get();
+            const snapshot = await db.collection(collectionName).get();
             const batch = db.batch();
             snapshot.docs.forEach(doc => {
                 batch.delete(doc.ref);
             });
             await batch.commit();
-            loadRSVPs(); // Refresh
+            loadRSVPs();
         } catch (error) {
-            console.error(`Error deleting all for ${eventName}:`, error);
+            console.error(`Error deleting all for ${collectionName}:`, error);
+        }
+    }
+}
+
+async function loadGuestListRequests() {
+    const tableBody = document.getElementById('request-table').querySelector('tbody');
+    tableBody.innerHTML = '';
+    try {
+        const snapshot = await db.collection('guest-list-requests').orderBy('timestamp', 'desc').get();
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${data.phone}</td>
+                <td>${data.timestamp ? data.timestamp.toDate().toLocaleString() : ''}</td>
+                <td><button onclick="deleteRequest('${doc.id}')">Delete</button></td>
+            `;
+            tableBody.appendChild(row);
+        });
+    } catch (error) {
+        console.error('Error loading guest list requests:', error);
+    }
+}
+
+async function deleteRequest(id) {
+    if (confirm('Delete this guest list request?')) {
+        try {
+            await db.collection('guest-list-requests').doc(id).delete();
+            loadGuestListRequests();
+        } catch (error) {
+            console.error('Error deleting request:', error);
         }
     }
 }

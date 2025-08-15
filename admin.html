@@ -11,6 +11,7 @@
     <div id="admin-password-prompt" style="display: none;">
         <h2>Enter Admin Password</h2>
         <input type="password" id="admin-password-input" placeholder="Admin Password">
+        <br>
         <button onclick="checkAdminPassword()">Submit</button>
         <p id="admin-password-error" style="color: red;"></p>
     </div>
@@ -24,7 +25,20 @@
         <main>
             <section id="rsvps">
                 <h2>RSVPs by Event</h2>
-                <div id="rsvp-groups"></div> <!-- Dynamic groups will be added here -->
+                <div id="rsvp-groups"></div>
+            </section>
+            <section id="guest-list-requests">
+                <h2>Guest List Requests</h2>
+                <table id="request-table">
+                    <thead>
+                        <tr>
+                            <th>Phone Number</th>
+                            <th>Timestamp</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </section>
         </main>
         <footer>
