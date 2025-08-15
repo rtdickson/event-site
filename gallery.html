@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pine Grove Gatherings - Picture Gallery</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="main-content">
+        <header>
+            <img src="images/banner.jpg" alt="Cozy Dinner" class="banner">
+            <h1>Pine Grove Gatherings</h1>
+            <nav>
+                <a href="index.html">Next Event</a>
+                <a href="upcoming.html">Upcoming Events</a>
+                <a href="admin.html" class="admin-link">Admin (Private)</a>
+            </nav>
+        </header>
+        <main>
+            <section id="gallery">
+                <h2>Picture Gallery</h2>
+                <p>Upload your event photos!</p>
+                <input type="file" id="photo-input" accept="image/*">
+                <button onclick="uploadPhoto()">Upload</button>
+                <p id="upload-message"></p>
+                <div id="gallery-grid" class="gallery-grid"></div>
+            </section>
+        </main>
+        <footer>
+            <p>Private event | Questions? Text [Your Name] at [Your Number]</p>
+        </footer>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-storage-compat.js"></script>
+    <script src="script-gallery.js"></script>
+</body>
+</html>
