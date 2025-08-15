@@ -44,10 +44,14 @@ async function loadGallery() {
         const res = await listRef.listAll();
         for (const itemRef of res.items) {
             const url = await itemRef.getDownloadURL();
+            const link = document.createElement('a');
+            link.href = url;
+            link.target = '_blank'; // Open in new window
             const img = document.createElement('img');
             img.src = url;
             img.alt = 'Event Photo';
-            galleryGrid.appendChild(img);
+            link.appendChild(img);
+            galleryGrid.appendChild(link);
         }
     } catch (error) {
         console.error('Error loading gallery:', error);

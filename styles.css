@@ -125,7 +125,7 @@ button:hover {
     background-color: #4a4e69;
 }
 
-#form-message, #request-message {
+#form-message, #upload-message, #request-message {
     color: green;
     font-weight: bold;
 }
@@ -203,6 +203,7 @@ footer {
     }
 }
 
+/* Gallery styles */
 #gallery-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -210,10 +211,20 @@ footer {
     margin-top: 1rem;
 }
 
+#gallery-grid a {
+    display: block;
+}
+
 #gallery-grid img {
     width: 100%;
+    max-width: 200px; /* Enforce thumbnail size */
     height: auto;
     border-radius: 8px;
     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    cursor: pointer;
+    transition: transform 0.2s;
+    object-fit: cover;
+}
+
+#gallery-grid img:hover {
+    transform: scale(1.05);
 }
