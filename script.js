@@ -40,9 +40,10 @@ document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
     const bringing = document.getElementById('bringing').value;
     const notes = document.getElementById('notes').value;
     const messageEl = document.getElementById('form-message');
+    const eventName = 'dinner-party'; // Change this for each event
 
     try {
-        await db.collection('rsvps').add({
+        await db.collection(`rsvps-${eventName}`).add({
             name,
             attending,
             guests: parseInt(guests),
