@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Enter Password</title>
+    <title>Pine Grove Gatherings</title>
     <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
 </head>
 <body>
     <form id="password-form">
@@ -14,58 +15,70 @@
     </form>
     <main id="main-content" style="display: none;">
         <header>
+            <img src="images/banner.jpg" alt="Cozy Dinner" class="banner">
             <h1>Pine Grove Gatherings</h1>
             <nav>
                 <a href="upcoming.html">Upcoming Events</a>
+                <a href="admin.html" class="admin-link">Admin (Private)</a>
                 <a href="gallery.html">Picture Gallery</a>
-                <a href="admin.html">Admin (Private)</a>
             </nav>
         </header>
-        <section>
-            <h2>Next Event: Dinner Party</h2>
-            <div>
-                <p><strong>Date & Time:</strong> Saturday, August 23, 2025, 6:00 PM</p>
-                <p><strong>Menu:</strong></p>
-                <ul>
-                    <li>Appetizers: Cheese platter, Veggie dips</li>
-                    <li>Main: Grilled salmon, Roasted veggies</li>
-                    <li>Dessert: Chocolate mousse</li>
-                </ul>
-                <p><strong>What to Bring:</strong> BYOB or a dessert to share.</p>
-                <p><strong>Schedule:</strong></p>
-                <ul>
-                    <li>6:00 PM: Arrival & Mingling</li>
-                    <li>7:00 PM: Dinner</li>
-                    <li>9:00 PM: Games or Chill</li>
-                </ul>
-            </div>
-            <h2>RSVP for Dinner Party</h2>
-            <form id="rsvp-form">
-                <label for="rsvp-name">Name:</label>
-                <input type="text" id="rsvp-name">
-                <label for="rsvp-phone">Phone Number:</label>
-                <input type="text" id="rsvp-phone" placeholder="+1XXXXXXXXXX">
-                <label>Attending?</label>
-                <input type="radio" name="attending" value="Yes" id="rsvp-yes">Yes
-                <input type="radio" name="attending" value="No" id="rsvp-no">No
-                <input type="radio" name="attending" value="Maybe" id="rsvp-maybe">Maybe
-                <label for="rsvp-guests">Number of Guests:</label>
-                <input type="number" id="rsvp-guests" min="0">
-                <label for="rsvp-notes">Dietary Notes:</label>
-                <textarea id="rsvp-notes"></textarea>
-                <button type="submit">Submit RSVP</button>
-                <p id="rsvp-message"></p>
-            </form>
-            <h2>Request Guest List</h2>
-            <p>Want to see who's coming? Submit your phone number below, and we'll send you the current guest list.</p>
-            <form id="guest-list-form">
-                <label for="guest-list-phone">Phone Number:</label>
-                <input type="text" id="guest-list-phone" placeholder="+1XXXXXXXXXX">
-                <button type="submit">Submit Request</button>
-                <p id="guest-list-message"></p>
-            </form>
-            <p>Request Guest List</p>
-        </section>
+        <main>
+            <section id="event-details">
+                <h2>Next Event: Dinner Party</h2>
+                <div class="event-card">
+                    <img src="images/event1.jpg" alt="Dinner Party" class="event-img">
+                    <div class="event-content">
+                        <p><strong>Date & Time:</strong> Saturday, August 23, 2025, 6:00 PM</p>
+                        <p><strong>Menu:</strong></p>
+                        <ul>
+                            <li>Appetizers: Cheese platter, Veggie dips</li>
+                            <li>Main: Grilled salmon, Roasted veggies</li>
+                            <li>Dessert: Chocolate mousse</li>
+                        </ul>
+                        <p><strong>What to Bring:</strong> BYOB or a dessert to share.</p>
+                        <p><strong>Schedule:</strong></p>
+                        <ul>
+                            <li>6:00 PM: Arrival & Mingling</li>
+                            <li>7:00 PM: Dinner</li>
+                            <li>9:00 PM: Games or Chill</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            <section id="rsvp">
+                <h2>RSVP for Dinner Party</h2>
+                <form id="rsvp-form">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" required>
+                    <label for="phone">Phone Number:</label>
+                    <input type="tel" id="phone" required>
+                    <label for="attending">Attending?</label>
+                    <select id="attending" required>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                        <option value="Maybe">Maybe</option>
+                    </select>
+                    <label for="guests">Number of Guests:</label>
+                    <input type="number" id="guests" min="0" value="1">
+                    <label for="notes">Dietary Notes:</label>
+                    <textarea id="notes"></textarea>
+                    <button type="submit">Submit RSVP</button>
+                </form>
+                <p id="form-message"></p>
+            </section>
+            <section id="guest-list-request">
+                <h2>Request Guest List</h2>
+                <p>Want to see who's coming? Submit your phone number below, and we'll send you the current guest list.</p>
+                <form id="guest-list-form" style="display: none;">
+                    <label for="request-phone">Phone Number:</label>
+                    <input type="tel" id="request-phone" required>
+                    <button type="submit">Submit Request</button>
+                </form>
+                <button onclick="document.getElementById('guest-list-form').style.display='block'; this.style.display='none';">Request Guest List</button>
+                <p id="request-message"></p>
+            </section>
+        </main>
         <footer>
             <p>Private event | Questions? Text [Your Name] at [Your Number]</p>
         </footer>
