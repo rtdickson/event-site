@@ -3,90 +3,51 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Pine Grove Gatherings</title>
+    <title>Pine Grove Gatherings - Admin</title>
     <link rel="stylesheet" href="styles.css">
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
-            authDomain: "piveevents.firebaseapp.com",
-            projectId: "piveevents",
-            storageBucket: "piveevents.firebasestorage.app",
-            messagingSenderId: "635106763509",
-            appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
-            measurementId: "G-2VW032KXE8"
-        };
-        firebase.initializeApp(firebaseConfig);
-      </script>
-    
-    <script src="script-twilio.js"></script>
-    <script src="script-admin.js"></script>
-    <script src="script-common.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div id="admin-password-prompt">
-        <form id="admin-password-form">
-            <input type="password" id="admin-password-input" placeholder="Enter admin password" required>
-            <button type="submit">Submit</button>
-            <p id="admin-password-error" style="color: red;"></p>
-        </form>
+    <div id="admin-password-prompt" style="display: none;">
+        <h2>Enter Admin Password</h2>
+        <input type="password" id="admin-password-input" placeholder="Admin Password">
+        <br>
+        <button onclick="checkAdminPassword()">Submit</button>
+        <p id="admin-password-error" style="color: red;"></p>
     </div>
     <div id="admin-content" style="display: none;">
         <header>
             <h1>Admin Dashboard</h1>
+            <nav>
+                <a href="index.html">Back to Main</a>
+                <a href="gallery.html">Picture Gallery</a>
+            </nav>
         </header>
         <main>
-            <h2>Manage Invites</h2>
-            <form id="invite-form">
-                <label for="event-select">Event:</label>
-                <select id="event-select">
-                    <option value="dinner-party">Dinner Party</option>
-                    <option value="fall-picnic">Fall Picnic</option>
-                    <option value="halloween-party">Halloween Party</option>
-                </select>
-                <label for="phone-numbers">Phone Numbers (comma-separated):</label>
-                <input type="text" id="phone-numbers" placeholder="+1XXXXXXXXXX,+1YYYYYYYYYY">
-                <label for="invite-message">Custom Message (optional):</label>
-                <textarea id="invite-message"></textarea>
-                <button type="submit">Send Invites</button>
-                <p id="invite-message"></p>
-            </form>
-            <h2>Add Contact</h2>
-            <form id="contact-form">
-                <label for="contact-name">Name:</label>
-                <input type="text" id="contact-name">
-                <label for="contact-phone">Phone:</label>
-                <input type="text" id="contact-phone" placeholder="+1XXXXXXXXXX">
-                <button type="submit">Add Contact</button>
-                <p id="contact-message"></p>
-            </form>
-            <h2>RSVPs</h2>
-            <div id="rsvp-groups"></div>
-            <h2>Guest List Requests</h2>
-            <table id="request-table">
-                <thead>
-                    <tr>
-                        <th>Phone</th>
-                        <th>Timestamp</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
-            <h2>Contacts</h2>
-            <table id="contact-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Phone</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+            <section id="rsvps">
+                <h2>RSVPs by Event</h2>
+                <div id="rsvp-groups"></div>
+            </section>
+            <section id="guest-list-requests">
+                <h2>Guest List Requests</h2>
+                <table id="request-table">
+                    <thead>
+                        <tr>
+                            <th>Phone Number</th>
+                            <th>Timestamp</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </section>
         </main>
+        <footer>
+            <p>Private admin | Questions? Text [Your Name] at [Your Number]</p>
+        </footer>
     </div>
-    
-    
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <script src="script-admin.js"></script>
+</body>
 </html>

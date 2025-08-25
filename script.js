@@ -1,69 +1,81 @@
-document.getElementById('password-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+const firebaseConfig = {
+    apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
+    authDomain: "piveevents.firebaseapp.com",
+    projectId: "piveevents",
+    storageBucket: "piveevents.firebasestorage.app",
+    messagingSenderId: "635106763509",
+    appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
+    measurementId: "G-2VW032KXE8"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+function checkPassword() {
     const password = document.getElementById('password-input').value;
-    const correctPassword = 'FriendsOnly2025';
+    const correctPassword = 'FriendsOnly2025'; // Guest password
     const errorEl = document.getElementById('password-error');
     if (password === correctPassword) {
         sessionStorage.setItem('authenticated', 'true');
-        document.getElementById('password-form').style.display = 'none';
+        document.getElementById('password-prompt').style.display = 'none';
         document.getElementById('main-content').style.display = 'block';
     } else {
         errorEl.textContent = 'Incorrect password. Try again.';
-        errorEl.style.color = 'red';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    if (sessionStorage.getItem('authenticated') === 'true') {
+        document.getElementById('main-content').style.display = 'block';
+    } else {
+        document.getElementById('password-prompt').style.display = 'block';
     }
 });
 
 document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = document.getElementById('rsvp-name').value;
-    const phone = document.getElementById('rsvp-phone').value;
-    const attending = document.querySelector('input[name="attending"]:checked')?.value || '';
-    const guests = parseInt(document.getElementById('rsvp-guests').value) || 0;
-    const notes = document.getElementById('rsvp-notes').value;
-    const messageEl = document.getElementById('rsvp-message');
+    const name = document.getElementById('name').value;
+    const phone = document.getElementById('phone').value;
+    const attending = document.getElementById('attending').value;
+    const guests = document.getElementById('guests').value;
+    const notes = document.getElementById('notes').value;
+    const messageEl = document.getElementById('form-message');
+    const eventCollection = 'rsvps-dinner-party'; // Change for each event
 
     try {
-        await firebase.firestore().collection('rsvps-dinner-party').add({
-            name: name || 'Unknown',
+        await db.collection(eventCollection).add({
+            name,
             phone,
             attending,
-            guests,
+            guests: parseInt(guests),
             notes,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
-        messageEl.textContent = 'RSVP submitted!';
+        messageEl.textContent = 'RSVP submitted! Thank you!';
         messageEl.style.color = 'green';
         document.getElementById('rsvp-form').reset();
     } catch (error) {
-        console.error('RSVP error:', error);
-        messageEl.textContent = `Error submitting RSVP: ${error.message}`;
+        messageEl.textContent = 'Error submitting RSVP. Try again.';
         messageEl.style.color = 'red';
     }
 });
 
 document.getElementById('guest-list-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const phone = document.getElementById('guest-list-phone').value;
-    const messageEl = document.getElementById('guest-list-message');
-
+    const phone = document.getElementById('request-phone').value;
+    const messageEl = document.getElementById('request-message');
     try {
-        await firebase.firestore().collection('guest-list-requests').add({
+        await db.collection('guest-list-requests').add({
             phone,
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
-        messageEl.textContent = 'Guest list request submitted!';
+        messageEl.textContent = 'Request submitted! You will receive the guest list soon.';
         messageEl.style.color = 'green';
         document.getElementById('guest-list-form').reset();
+        document.getElementById('guest-list-form').style.display = 'none';
+        document.querySelector('#guest-list-request button').style.display = 'block';
     } catch (error) {
-        console.error('Guest list request error:', error);
-        messageEl.textContent = `Error submitting request: ${error.message}`;
+        messageEl.textContent = 'Error submitting request. Try again.';
         messageEl.style.color = 'red';
-    }
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    if (sessionStorage.getItem('authenticated') === 'true') {
-        document.getElementById('password-form').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
     }
 });

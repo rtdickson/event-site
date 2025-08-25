@@ -1,10 +1,38 @@
+const firebaseConfig = {
+    apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
+    authDomain: "piveevents.firebaseapp.com",
+    projectId: "piveevents",
+    storageBucket: "piveevents.firebasestorage.app",
+    messagingSenderId: "635106763509",
+    appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
+    measurementId: "G-2VW032KXE8"
+};
+
+firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Move all function definitions before checkAdminPassword
+function checkAdminPassword() {
+    const password = document.getElementById('admin-password-input').value;
+    const correctAdminPassword = 'AdminSecret2025'; // Special admin password
+    const errorEl = document.getElementById('admin-password-error');
+    if (password === correctAdminPassword) {
+        document.getElementById('admin-password-prompt').style.display = 'none';
+        document.getElementById('admin-content').style.display = 'block';
+        loadRSVPs();
+        loadGuestListRequests();
+    } else {
+        errorEl.textContent = 'Incorrect admin password. Try again.';
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('admin-password-prompt').style.display = 'block';
+});
+
 async function loadRSVPs() {
     const groupsDiv = document.getElementById('rsvp-groups');
     groupsDiv.innerHTML = '';
-    const events = ['dinner-party', 'fall-picnic', 'halloween-party'];
+    const events = ['dinner-party', 'fall-picnic', 'halloween-party']; // Add your event names here
 
     for (const eventName of events) {
         const groupDiv = document.createElement('div');
@@ -106,71 +134,3 @@ async function deleteRequest(id) {
         }
     }
 }
-
-async function loadContacts() {
-    const tableBody = document.getElementById('contact-table').querySelector('tbody');
-    tableBody.innerHTML = '';
-    try {
-        const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${data.name || ''}</td>
-                <td>${data.phone}</td>
-                <td><button onclick="deleteContact('${doc.id}')">Delete</button></td>
-            `;
-            tableBody.appendChild(row);
-        });
-    } catch (error) {
-        console.error('Error loading contacts:', error);
-    }
-}
-
-async function deleteContact(id) {
-    if (confirm('Delete this contact?')) {
-        try {
-            await db.collection('contacts').doc(id).delete();
-            loadContacts();
-        } catch (error) {
-            console.error('Error deleting contact:', error);
-        }
-    }
-}
-
-function checkAdminPassword() {
-    console.log('checkAdminPassword called');
-    const password = document.getElementById('admin-password-input').value;
-    console.log('Entered password:', password); // Remove in production
-    const correctAdminPassword = 'AdminSecret2025';
-    const errorEl = document.getElementById('admin-password-error');
-    if (password === correctAdminPassword) {
-        console.log('Password correct - showing admin content');
-        document.getElementById('admin-password-prompt').style.display = 'none';
-        document.getElementById('admin-content').style.display = 'block';
-        loadRSVPs();
-        loadGuestListRequests();
-        loadContacts();
-    } else {
-        console.log('Password incorrect - showing error');
-        errorEl.textContent = 'Incorrect admin password. Try again.';
-        errorEl.style.color = 'red';
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded fired');
-    document.getElementById('admin-password-prompt').style.display = 'block';
-
-    const adminPasswordForm = document.getElementById('admin-password-form');
-    console.log('admin-password-form element:', adminPasswordForm);
-    if (adminPasswordForm) {
-        adminPasswordForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            console.log('Admin password form submitted');
-            checkAdminPassword();
-        });
-    } else {
-        console.error('admin-password-form not found in DOM');
-    }
-});
