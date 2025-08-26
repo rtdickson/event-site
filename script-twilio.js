@@ -61,4 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         console.error('contact-form not found in DOM');
     }
+
 });
+
