@@ -1,0 +1,20 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /contacts/{document=**} {
+      allow read, write: if true; // Allow all for testing
+    }
+    match /rsvps-dinner-party/{document=**} {
+      allow read, write: if true;
+    }
+    match /guest-list-requests/{document=**} {
+      allow read, write: if true;
+    }
+    match /rsvps-fall-picnic/{document=**} {
+      allow read, write: if true;
+    }
+    match /rsvps-halloween-party/{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
