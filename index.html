@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pine Grove Gatherings</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="password-prompt" style="display: none;">
+        <h2>Enter Password</h2>
+        <input type="password" id="password-input" placeholder="Password">
+        <br>
+        <button onclick="checkPassword()">Submit</button>
+        <p id="password-error" style="color: red;"></p>
+    </div>
+    <div id="main-content" style="display: none;">
+        <header>
+            <img src="images/banner.jpg" alt="Cozy Dinner" class="banner">
+            <h1>Pine Grove Gatherings</h1>
+            <nav>
+                <a href="upcoming.html">Upcoming Events</a>
+                <a href="admin.html" class="admin-link">Admin (Private)</a>
+                <a href="gallery.html">Picture Gallery</a>
+            </nav>
+        </header>
+        <main>
+            <section id="event-details">
+                <h2>Happy Hour</h2>
+                <div class="event-card">
+                    <img src="images/event1.jpg" alt="Dinner Party" class="event-img">
+                    <div class="event-content">
+                        <p><strong>Date & Time:</strong> Sunday, August 31, 2025, 2:00 PM</p>
+                        <p><strong>Menu:</strong></p>
+                        <ul>
+                            <li>Appetizers: Cheese platter, Veggie dips</li>
+                            <li>Just drop in at your leisure</li>
+                            <li>-</li>
+                        </ul>
+                        <p><strong>What to Bring:</strong> BYOB </p>
+                        <p><strong>Schedule:</strong></p>
+                        <ul>
+                            <li>-</li>
+                            <li>-</li>
+                            <li>-</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+            <section id="rsvp">
+                <h2>Happy Hour</h2>
+                <form id="rsvp-form">
+                    <label for="name">Name:</label>
+                    <input type="text" id="name" required>
+                    <label for="phone">Phone Number:</label>
+                    <input type="tel" id="phone" required>
+                    <label for="attending">Attending?</label>
+                    <select id="attending" required>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                        <option value="Maybe">Maybe</option>
+                    </select>
+                    <label for="guests">Number of Guests:</label>
+                    <input type="number" id="guests" min="0" value="1">
+                    <label for="notes">Dietary Notes:</label>
+                    <textarea id="notes"></textarea>
+                    <button type="submit">Submit RSVP</button>
+                </form>
+                <p id="form-message"></p>
+            </section>
+            <section id="guest-list-request">
+                <h2>Request Guest List</h2>
+                <p>Want to see who's coming? Submit your phone number below, and we'll send you the current guest list.</p>
+                <form id="guest-list-form" style="display: none;">
+                    <label for="request-phone">Phone Number:</label>
+                    <input type="tel" id="request-phone" required>
+                    <button type="submit">Submit Request</button>
+                </form>
+                <button onclick="document.getElementById('guest-list-form').style.display='block'; this.style.display='none';">Request Guest List</button>
+                <p id="request-message"></p>
+            </section>
+        </main>
+        <footer>
+            <p>Private event | Questions? Text [Your Name] at [Your Number]</p>
+        </footer>
+    </div>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
