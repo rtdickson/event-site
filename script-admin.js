@@ -8,13 +8,24 @@ async function populateDynamicContactList() {
     listContainer.innerHTML = '';
     try {
         const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
+        
+        // Add "Add Selected" button at the top
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'contact-list-header';
+        headerDiv.innerHTML = `
+            <button onclick="addSelectedToInvite()" style="margin-bottom: 10px; background-color: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Add Selected to Invite</button>
+        `;
+        listContainer.appendChild(headerDiv);
+
         snapshot.forEach(doc => {
             const data = doc.data();
             const contactDiv = document.createElement('div');
             contactDiv.className = 'contact-entry';
+            contactDiv.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;';
             contactDiv.innerHTML = `
-                <span><strong>${data.name}</strong>: ${data.phone}</span>
-                <button onclick="addToInvite('${data.phone}')">Add to Invite</button>
+                <input type="checkbox" id="contact-${doc.id}" value="${data.phone}" style="margin-right: 8px;" />
+                <label for="contact-${doc.id}" style="flex: 1; cursor: pointer;"><strong>${data.name}</strong>: ${data.phone}</label>
+                <button onclick="addToInvite('${data.phone}')" style="background: none; border: none; font-size: 18px; color: #4CAF50; cursor: pointer; padding: 4px;" title="Add to invite">+</button>
             `;
             listContainer.appendChild(contactDiv);
         });
@@ -28,8 +39,43 @@ function addToInvite(phone) {
     if (inputField.value.trim() === '') {
         inputField.value = phone;
     } else {
-        inputField.value += ',' + phone;
+        // Check if phone number is already in the list to avoid duplicates
+        const existingNumbers = inputField.value.split(',').map(num => num.trim());
+        if (!existingNumbers.includes(phone)) {
+            inputField.value += ',' + phone;
+        }
     }
+}
+
+function addSelectedToInvite() {
+    const checkboxes = document.querySelectorAll('#dynamic-contact-list input[type="checkbox"]:checked');
+    const inputField = document.getElementById('phone-numbers');
+    
+    if (checkboxes.length === 0) {
+        alert('Please select at least one contact to add.');
+        return;
+    }
+    
+    const selectedNumbers = Array.from(checkboxes).map(cb => cb.value);
+    const existingNumbers = inputField.value.trim() === '' ? [] : inputField.value.split(',').map(num => num.trim());
+    
+    // Filter out duplicates
+    const newNumbers = selectedNumbers.filter(num => !existingNumbers.includes(num));
+    
+    if (newNumbers.length === 0) {
+        alert('All selected contacts are already in the invite list.');
+        return;
+    }
+    
+    // Add new numbers
+    if (inputField.value.trim() === '') {
+        inputField.value = newNumbers.join(',');
+    } else {
+        inputField.value += ',' + newNumbers.join(',');
+    }
+    
+    // Uncheck all checkboxes
+    checkboxes.forEach(cb => cb.checked = false);
 }
 
 async function loadRSVPs() {
@@ -163,6 +209,8 @@ async function deleteContact(id) {
         try {
             await db.collection('contacts').doc(id).delete();
             loadContacts();
+            // Refresh the dynamic contact list as well
+            populateDynamicContactList();
         } catch (error) {
             console.error('Error deleting contact:', error);
         }
@@ -178,10 +226,20 @@ function checkAdminPassword() {
         console.log('Password correct - showing admin content');
         document.getElementById('admin-password-prompt').style.display = 'none';
         document.getElementById('admin-content').style.display = 'block';
+        
+        // Load all data
         populateDynamicContactList();
         loadRSVPs();
         loadGuestListRequests();
         loadContacts();
+        
+        // Initialize forms now that they are visible
+        if (typeof window.initializeContactForm === 'function') {
+            window.initializeContactForm();
+        }
+        if (typeof window.initializeInviteForm === 'function') {
+            window.initializeInviteForm();
+        }
     } else {
         console.log('Password incorrect - showing error');
         errorEl.textContent = 'Incorrect admin password. Try again.';
