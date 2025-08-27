@@ -36,12 +36,7 @@
 <header>
 <h1>Admin Dashboard</h1>
 </header>
-<main>
-<h2>Manage Invites</h2>
-
-<h2>Add Contact</h2>
-
-<div style="display: flex; gap: 40px; align-items: flex-start;"><div style="flex: 1;"><form id="invite-form">
+<main><div style="display: flex; gap: 20px;"><form id="invite-form">
 <label for="event-select">Event:</label>
 <select id="event-select">
 <option value="dinner-party">Dinner Party</option>
@@ -54,7 +49,10 @@
 <textarea id="invite-message"></textarea>
 <button type="submit">Send Invites</button>
 <p id="invite-message"></p>
-</form></div><div style="flex: 1;"><form id="contact-form">
+</form><div id="dynamic-contact-list" style="flex: 1;">Loading contacts...</div></div><div style="display: flex; gap: 40px;"><div><h3>Contact List</h3><table border="1" id="contact-list-table" style="width: 100%;"><thead><tr><th>Name</th><th>Phone</th><th>Action</th></tr></thead><tbody></tbody></table></div></div>
+
+<h2>Add Contact</h2>
+<div style="display: flex; gap: 40px; align-items: flex-start;"><div style="flex: 1;"></div><div style="flex: 1;"><form id="contact-form">
 <label for="contact-name">Name:</label>
 <input id="contact-name" type="text"/>
 <label for="contact-phone">Phone:</label>

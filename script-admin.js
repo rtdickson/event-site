@@ -1,6 +1,37 @@
 const db = firebase.firestore();
 
 // Move all function definitions before checkAdminPassword
+async function populateDynamicContactList() {
+    const listContainer = document.getElementById('dynamic-contact-list');
+    if (!listContainer) return;
+
+    listContainer.innerHTML = '';
+    try {
+        const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const contactDiv = document.createElement('div');
+            contactDiv.className = 'contact-entry';
+            contactDiv.innerHTML = `
+                <span><strong>${data.name}</strong>: ${data.phone}</span>
+                <button onclick="addToInvite('${data.phone}')">Add to Invite</button>
+            `;
+            listContainer.appendChild(contactDiv);
+        });
+    } catch (error) {
+        console.error('Error loading dynamic contact list:', error);
+    }
+}
+
+function addToInvite(phone) {
+    const inputField = document.getElementById('phone-numbers');
+    if (inputField.value.trim() === '') {
+        inputField.value = phone;
+    } else {
+        inputField.value += ',' + phone;
+    }
+}
+
 async function loadRSVPs() {
     const groupsDiv = document.getElementById('rsvp-groups');
     groupsDiv.innerHTML = '';
@@ -147,6 +178,7 @@ function checkAdminPassword() {
         console.log('Password correct - showing admin content');
         document.getElementById('admin-password-prompt').style.display = 'none';
         document.getElementById('admin-content').style.display = 'block';
+        populateDynamicContactList();
         loadRSVPs();
         loadGuestListRequests();
         loadContacts();
