@@ -228,3 +228,178 @@ footer {
 #gallery-grid img:hover {
     transform: scale(1.05);
 }
+
+/* Admin-specific styles */
+
+/* Main admin layout */
+.admin-flex-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 40px;
+}
+
+.admin-flex-item {
+    flex: 1;
+}
+
+.admin-flex-item.contact-selection {
+    flex: 1.5;
+}
+
+.admin-flex-item.contact-form {
+    flex: 0.5;
+}
+
+/* Sections */
+.main-actions,
+.rsvp-section,
+.requests-section,
+.contacts-section,
+.event-manager-section {
+    margin-bottom: 40px;
+}
+
+/* Dynamic contact list styles */
+.contact-entry {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 6px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+.contact-entry:hover {
+    background-color: #f0f0f0;
+}
+
+.contact-entry input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.contact-entry label {
+    flex: 1;
+    cursor: pointer;
+    margin: 0;
+}
+
+.contact-entry button {
+    background: none;
+    border: none;
+    font-size: 18px;
+    color: #4CAF50;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 2px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.contact-entry button:hover {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.contact-list-header button {
+    margin-bottom: 10px;
+    background-color: #4CAF50;
+    color: white;
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.contact-list-header button:hover {
+    background-color: #45a049;
+}
+
+#dynamic-contact-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: white;
+}
+
+/* Event manager styles */
+.event-manager-container {
+    display: flex;
+    gap: 20px;
+}
+
+.event-form-container {
+    flex: 2;
+}
+
+.events-list-container {
+    flex: 1;
+}
+
+#events-list {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.event-item {
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+.event-item button {
+    margin-right: 5px;
+    padding: 4px 8px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.event-item .edit-btn {
+    background-color: #2196F3;
+    color: white;
+}
+
+.event-item .edit-btn:hover {
+    background-color: #1976D2;
+}
+
+.event-item .delete-btn {
+    background-color: #f44336;
+    color: white;
+}
+
+.event-item .delete-btn:hover {
+    background-color: #d32f2f;
+}
+
+.event-active-checkbox {
+    margin: 10px 0;
+}
+
+/* Responsive admin layout */
+@media (max-width: 1200px) {
+    .admin-flex-container {
+        flex-direction: column;
+    }
+    
+    .admin-flex-item,
+    .admin-flex-item.contact-selection,
+    .admin-flex-item.contact-form {
+        flex: 1;
+    }
+    
+    .event-manager-container {
+        flex-direction: column;
+    }
+    
+    .event-form-container,
+    .events-list-container {
+        flex: 1;
+    }
+}

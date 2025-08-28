@@ -13,7 +13,186 @@ function normalizePhone(phone) {
     return cleaned;
 }
 
-// Add this function to get invite status for a contact
+// Helper function to create collection name from event name
+function createCollectionName(eventName) {
+    return 'rsvps-' + eventName.toLowerCase()
+        .replace(/[^a-z0-9\s]/g, '') // Remove special characters
+        .replace(/\s+/g, '-') // Replace spaces with dashes
+        .replace(/-+/g, '-') // Replace multiple dashes with single dash
+        .replace(/^-|-$/g, ''); // Remove leading/trailing dashes
+}
+
+// Event management functions
+async function loadEvents() {
+    const eventsList = document.getElementById('events-list');
+    eventsList.innerHTML = 'Loading events...';
+    
+    try {
+        const snapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
+        eventsList.innerHTML = '';
+        
+        if (snapshot.empty) {
+            eventsList.innerHTML = '<p>No events created yet.</p>';
+            return;
+        }
+        
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event-item';
+            eventDiv.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <strong>${data.name}</strong>
+                        ${data.isActive ? '<span style="color: green; font-weight: bold;"> (ACTIVE)</span>' : ''}
+                        <div style="font-size: 12px; color: #666;">${data.date}</div>
+                        <div style="font-size: 12px; color: #666;">Collection: ${data.collectionName}</div>
+                    </div>
+                    <div>
+                        <button class="edit-btn" onclick="editEvent('${doc.id}')">Edit</button>
+                        <button class="delete-btn" onclick="deleteEvent('${doc.id}')">Delete</button>
+                    </div>
+                </div>
+            `;
+            eventsList.appendChild(eventDiv);
+        });
+    } catch (error) {
+        console.error('Error loading events:', error);
+        eventsList.innerHTML = '<p style="color: red;">Error loading events.</p>';
+    }
+}
+
+async function saveEvent(eventData, eventId = null) {
+    try {
+        // If setting this event as active, deactivate all others first
+        if (eventData.isActive) {
+            const activeSnapshot = await db.collection('events').where('isActive', '==', true).get();
+            const batch = db.batch();
+            activeSnapshot.docs.forEach(doc => {
+                batch.update(doc.ref, { isActive: false });
+            });
+            await batch.commit();
+        }
+        
+        if (eventId) {
+            // Update existing event
+            await db.collection('events').doc(eventId).update(eventData);
+        } else {
+            // Create new event
+            eventData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+            await db.collection('events').add(eventData);
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Error saving event:', error);
+        return false;
+    }
+}
+
+async function editEvent(eventId) {
+    try {
+        const doc = await db.collection('events').doc(eventId).get();
+        if (!doc.exists) return;
+        
+        const data = doc.data();
+        
+        // Populate form with event data
+        document.getElementById('event-name').value = data.name || '';
+        document.getElementById('event-date').value = data.date || '';
+        document.getElementById('event-description').value = data.description || '';
+        document.getElementById('event-menu').value = Array.isArray(data.menu) ? data.menu.join('\n') : '';
+        document.getElementById('event-bring').value = data.whatToBring || '';
+        document.getElementById('event-schedule').value = Array.isArray(data.schedule) ? data.schedule.join('\n') : '';
+        document.getElementById('event-active').checked = data.isActive || false;
+        
+        // Store the event ID for updating
+        document.getElementById('event-form').setAttribute('data-edit-id', eventId);
+        
+        // Change button text
+        const submitButton = document.querySelector('#event-form button[type="submit"]');
+        submitButton.textContent = 'Update Event';
+        
+    } catch (error) {
+        console.error('Error loading event for editing:', error);
+    }
+}
+
+async function deleteEvent(eventId) {
+    if (confirm('Delete this event? This will also delete all RSVPs for this event.')) {
+        try {
+            // Get the event to find its collection name
+            const eventDoc = await db.collection('events').doc(eventId).get();
+            const eventData = eventDoc.data();
+            
+            // Delete the event
+            await db.collection('events').doc(eventId).delete();
+            
+            // Delete associated RSVPs
+            if (eventData.collectionName) {
+                const rsvpSnapshot = await db.collection(eventData.collectionName).get();
+                const batch = db.batch();
+                rsvpSnapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+                await batch.commit();
+            }
+            
+            loadEvents();
+            loadEventOptions(); // Refresh dropdown
+            document.getElementById('event-message').textContent = 'Event deleted successfully.';
+            document.getElementById('event-message').style.color = 'green';
+        } catch (error) {
+            console.error('Error deleting event:', error);
+            document.getElementById('event-message').textContent = 'Error deleting event.';
+            document.getElementById('event-message').style.color = 'red';
+        }
+    }
+}
+
+function clearEventForm() {
+    document.getElementById('event-form').reset();
+    document.getElementById('event-form').removeAttribute('data-edit-id');
+    document.querySelector('#event-form button[type="submit"]').textContent = 'Save Event';
+    document.getElementById('event-message').textContent = '';
+}
+
+// Load event options for the invite form dropdown - now shows event names
+async function loadEventOptions() {
+    try {
+        const eventSelect = document.getElementById('event-select');
+        if (!eventSelect) return;
+        
+        const snapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
+        
+        // Clear existing options
+        eventSelect.innerHTML = '';
+        
+        // Add default message if no events exist
+        if (snapshot.empty) {
+            eventSelect.innerHTML = '<option value="">No events created yet</option>';
+            return;
+        }
+        
+        // Add event options from database - using collection name as value, display name as text
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const option = document.createElement('option');
+            option.value = data.collectionName.replace('rsvps-', ''); // Remove rsvps- prefix for value
+            option.textContent = data.name;
+            if (data.isActive) {
+                option.textContent += ' (ACTIVE)';
+                option.selected = true;
+            }
+            eventSelect.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Error loading event options:', error);
+    }
+}
+
+// Get invite status for a contact
 async function getContactInviteStatus(phone, eventName) {
     try {
         const normalizedContactPhone = normalizePhone(phone);
@@ -251,7 +430,31 @@ async function loadRSVPs() {
     console.log('=== Starting loadRSVPs function ===');
     const groupsDiv = document.getElementById('rsvp-groups');
     groupsDiv.innerHTML = '';
-    const events = ['dinner-party', 'fall-picnic', 'halloween-party'];
+    
+    // Load events from database to get their collection names
+    let eventCollections = [];
+    
+    try {
+        const eventsSnapshot = await db.collection('events').get();
+        if (!eventsSnapshot.empty) {
+            eventCollections = eventsSnapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    name: data.name,
+                    collectionName: data.collectionName
+                };
+            });
+        } else {
+            // Fallback to hardcoded collections if no events exist
+            eventCollections = [
+                { name: 'Dinner Party', collectionName: 'rsvps-dinner-party' },
+                { name: 'Fall Picnic', collectionName: 'rsvps-fall-picnic' },
+                { name: 'Halloween Party', collectionName: 'rsvps-halloween-party' }
+            ];
+        }
+    } catch (error) {
+        console.error('Error loading events for RSVPs:', error);
+    }
 
     // Load contacts for name lookup
     const contactsMap = new Map();
@@ -262,7 +465,6 @@ async function loadRSVPs() {
         
         contactsSnapshot.forEach(doc => {
             const data = doc.data();
-            console.log('Contact data:', data);
             const normalizedPhone = normalizePhone(data.phone);
             if (data.phone) {
                 // Store both the original and normalized versions
@@ -270,19 +472,17 @@ async function loadRSVPs() {
                 if (normalizedPhone && normalizedPhone !== data.phone) {
                     contactsMap.set(normalizedPhone, data.name);
                 }
-                console.log(`Added contact: ${data.name} -> ${data.phone} (normalized: ${normalizedPhone})`);
             }
         });
-        console.log('Final contacts map:', Object.fromEntries(contactsMap));
     } catch (error) {
         console.error('Error loading contacts for name lookup:', error);
     }
 
-    for (const eventName of events) {
+    for (const event of eventCollections) {
         const groupDiv = document.createElement('div');
-        groupDiv.innerHTML = `<h3>${eventName.charAt(0).toUpperCase() + eventName.slice(1).replace('-', ' ')} RSVPs</h3>
-            <button onclick="deleteAllForEvent('rsvps-${eventName}')">Delete All for This Event</button>
-            <table id="rsvp-table-${eventName}">
+        groupDiv.innerHTML = `<h3>${event.name} RSVPs</h3>
+            <button onclick="deleteAllForEvent('${event.collectionName}')">Delete All for This Event</button>
+            <table id="rsvp-table-${event.collectionName}">
                 <thead>
                     <tr>
                         <th>Name</th>
@@ -300,16 +500,10 @@ async function loadRSVPs() {
 
         const tableBody = groupDiv.querySelector('tbody');
         try {
-            console.log(`Loading RSVPs for event: ${eventName}`);
-            const snapshot = await db.collection(`rsvps-${eventName}`).orderBy('timestamp', 'desc').get();
-            console.log(`Found ${snapshot.size} RSVPs for ${eventName}`);
+            const snapshot = await db.collection(event.collectionName).orderBy('timestamp', 'desc').get();
             
             snapshot.forEach(doc => {
                 const data = doc.data();
-                console.log(`=== Processing RSVP for ${eventName} ===`);
-                console.log('RSVP data:', data);
-                console.log('RSVP name:', data.name);
-                console.log('RSVP phone:', data.phone);
                 
                 // Look up name from contacts if name is "Unknown", "Unknown (SMS)", or empty but we have a phone
                 let displayName = data.name;
@@ -320,30 +514,19 @@ async function loadRSVPs() {
                     data.name.trim() === '' ||
                     data.name.toLowerCase().includes('unknown')
                 );
-                console.log(`Should lookup name? ${shouldLookup} (name: "${data.name}", has phone: ${!!data.phone})`);
                 
                 if (shouldLookup && data.phone) {
-                    console.log(`Attempting lookup for phone: "${data.phone}"`);
                     // Try exact match first
                     if (contactsMap.has(data.phone)) {
                         displayName = contactsMap.get(data.phone);
-                        console.log(`✓ Found exact match for ${data.phone}: ${displayName}`);
                     } else {
                         // Try normalized match
                         const normalizedRSVPPhone = normalizePhone(data.phone);
-                        console.log(`Trying normalized lookup: "${normalizedRSVPPhone}"`);
                         if (normalizedRSVPPhone && contactsMap.has(normalizedRSVPPhone)) {
                             displayName = contactsMap.get(normalizedRSVPPhone);
-                            console.log(`✓ Found normalized match for ${data.phone} (${normalizedRSVPPhone}): ${displayName}`);
-                        } else {
-                            console.log(`✗ No match found for phone: "${data.phone}" (normalized: "${normalizedRSVPPhone}")`);
-                            console.log('Available phones in contacts:', Array.from(contactsMap.keys()));
                         }
                     }
-                } else {
-                    console.log('Skipping lookup - using existing name or no phone available');
                 }
-                console.log(`Final display name: "${displayName}"`);
                 
                 const row = document.createElement('tr');
                 row.innerHTML = `
@@ -353,15 +536,14 @@ async function loadRSVPs() {
                     <td>${data.guests}</td>
                     <td>${data.notes || ''}</td>
                     <td>${data.timestamp ? data.timestamp.toDate().toLocaleString() : ''}</td>
-                    <td><button onclick="deleteRSVP('${doc.id}', 'rsvps-${eventName}')">Delete</button></td>
+                    <td><button onclick="deleteRSVP('${doc.id}', '${event.collectionName}')">Delete</button></td>
                 `;
                 tableBody.appendChild(row);
             });
         } catch (error) {
-            console.error(`Error loading RSVPs for rsvps-${eventName}:`, error);
+            console.error(`Error loading RSVPs for ${event.collectionName}:`, error);
         }
     }
-    console.log('=== Finished loadRSVPs function ===');
 }
 
 async function deleteRSVP(id, collectionName) {
@@ -378,7 +560,7 @@ async function deleteRSVP(id, collectionName) {
 }
 
 async function deleteAllForEvent(collectionName) {
-    if (confirm(`Delete all RSVPs for ${collectionName.replace('rsvps-', '').replace('-', ' ')}?`)) {
+    if (confirm(`Delete all RSVPs for this event?`)) {
         try {
             const snapshot = await db.collection(collectionName).get();
             const batch = db.batch();
@@ -459,7 +641,7 @@ async function deleteContact(id) {
     }
 }
 
-function checkAdminPassword() {
+async function checkAdminPassword() {
     console.log('checkAdminPassword called');
     const password = document.getElementById('admin-password-input').value;
     const correctAdminPassword = 'AdminSecret2025';
@@ -470,10 +652,12 @@ function checkAdminPassword() {
         document.getElementById('admin-content').style.display = 'block';
         
         // Load all data
+        await loadEvents();
+        await loadEventOptions();
         populateDynamicContactList();
         loadRSVPs();
         loadGuestListRequests();
-        loadContacts();
+        
         
         // Add event change listener
         const eventSelect = document.getElementById('event-select');
@@ -500,14 +684,45 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('admin-password-prompt').style.display = 'block';
 
     const adminPasswordForm = document.getElementById('admin-password-form');
-    console.log('admin-password-form element:', adminPasswordForm);
     if (adminPasswordForm) {
         adminPasswordForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            console.log('Admin password form submitted');
             checkAdminPassword();
         });
-    } else {
-        console.error('admin-password-form not found in DOM');
+    }
+
+    // Add event form submission handler
+    const eventForm = document.getElementById('event-form');
+    if (eventForm) {
+        eventForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const eventName = document.getElementById('event-name').value;
+            const eventData = {
+                name: eventName,
+                date: document.getElementById('event-date').value,
+                description: document.getElementById('event-description').value,
+                menu: document.getElementById('event-menu').value.split('\n').filter(item => item.trim()),
+                whatToBring: document.getElementById('event-bring').value,
+                schedule: document.getElementById('event-schedule').value.split('\n').filter(item => item.trim()),
+                collectionName: createCollectionName(eventName),
+                isActive: document.getElementById('event-active').checked
+            };
+            
+            const editId = eventForm.getAttribute('data-edit-id');
+            const success = await saveEvent(eventData, editId);
+            
+            const messageEl = document.getElementById('event-message');
+            if (success) {
+                messageEl.textContent = editId ? 'Event updated successfully!' : 'Event created successfully!';
+                messageEl.style.color = 'green';
+                clearEventForm();
+                loadEvents();
+                loadEventOptions(); // Refresh the invite form dropdown
+            } else {
+                messageEl.textContent = 'Error saving event. Please try again.';
+                messageEl.style.color = 'red';
+            }
+        });
     }
 });
