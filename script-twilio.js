@@ -60,7 +60,7 @@ function initializeInviteForm() {
             const messageEl = document.getElementById('invite-message');
 
             try {
-                const response = await fetch('http://127.0.0.1:5001/piveevents/us-central1/sendInvites', {
+                const response = await fetch('https://sendinvites-kzkp66jxja-uc.a.run.app', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ eventName, phoneNumbers, message })
