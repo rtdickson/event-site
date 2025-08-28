@@ -1,4 +1,5 @@
 firebase-debug.log 
 archive/ 
 git 
-functions/
+/functions/*
+!/functions/index.js
