@@ -16,11 +16,27 @@ function normalizePhone(phone) {
 // Add this function to get invite status for a contact
 async function getContactInviteStatus(phone, eventName) {
     try {
+        const normalizedContactPhone = normalizePhone(phone);
+        
         // Check if they have an RSVP for this event
-        const rsvpSnapshot = await db.collection(`rsvps-${eventName}`)
+        // Try exact match first
+        let rsvpSnapshot = await db.collection(`rsvps-${eventName}`)
             .where('phone', '==', phone)
             .limit(1)
             .get();
+        
+        // If no exact match, try to find by normalized phone
+        if (rsvpSnapshot.empty && normalizedContactPhone) {
+            const allRSVPs = await db.collection(`rsvps-${eventName}`).get();
+            
+            for (const doc of allRSVPs.docs) {
+                const rsvpData = doc.data();
+                if (normalizePhone(rsvpData.phone) === normalizedContactPhone) {
+                    rsvpSnapshot = { empty: false, docs: [doc] };
+                    break;
+                }
+            }
+        }
         
         if (!rsvpSnapshot.empty) {
             const rsvpData = rsvpSnapshot.docs[0].data();
@@ -35,12 +51,29 @@ async function getContactInviteStatus(phone, eventName) {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         
-        const inviteSnapshot = await db.collection('invites')
+        // Try exact match for invites first
+        let inviteSnapshot = await db.collection('invites')
             .where('phone', '==', phone)
             .where('eventName', '==', eventName)
             .where('timestamp', '>', sevenDaysAgo)
             .limit(1)
             .get();
+        
+        // If no exact match, try normalized phone for invites
+        if (inviteSnapshot.empty && normalizedContactPhone) {
+            const allInvites = await db.collection('invites')
+                .where('eventName', '==', eventName)
+                .where('timestamp', '>', sevenDaysAgo)
+                .get();
+            
+            for (const doc of allInvites.docs) {
+                const inviteData = doc.data();
+                if (normalizePhone(inviteData.phone) === normalizedContactPhone) {
+                    inviteSnapshot = { empty: false, docs: [doc] };
+                    break;
+                }
+            }
+        }
         
         if (!inviteSnapshot.empty) {
             return {
