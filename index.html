@@ -27,34 +27,33 @@
         </header>
         <main>
             <section id="event-details">
-
-                <h2>Happy Hour</h2>
-                <div class="event-card">
-                    <img src="images/event1.jpg" alt="Dinner Party" class="event-img">
-                    <div class="event-content">
-                        <p><strong>Date & Time:</strong> Sunday, August 31, 2025, 2:00 PM</p>
-                        <p><strong>Menu:</strong></p>
-                        <ul>
-                            <li>Appetizers: Cheese platter, Veggie dips</li>
-                            <li>Just drop in at your leisure</li>
-                            <li>-</li>
-                        </ul>
-                        <p><strong>What to Bring:</strong> BYOB </p>
-                        <p><strong>Schedule:</strong></p>
-                        <ul>
-                            <li>-</li>
-                            <li>-</li>
-                            <li>-</li>
-
-
-                        </ul>
+                <div id="event-loading">Loading event details...</div>
+                <div id="event-content" style="display: none;">
+                    <h2 id="event-name">Event Name</h2>
+                    <div class="event-card">
+                        <img src="images/event1.jpg" alt="Event" class="event-img">
+                        <div class="event-content">
+                            <p><strong>Date & Time:</strong> <span id="event-date">Loading...</span></p>
+                            <p><strong>Description:</strong> <span id="event-description">Loading...</span></p>
+                            <div id="menu-section">
+                                <p><strong>Menu:</strong></p>
+                                <ul id="event-menu"></ul>
+                            </div>
+                            <p><strong>What to Bring:</strong> <span id="event-bring">Loading...</span></p>
+                            <div id="schedule-section">
+                                <p><strong>Schedule:</strong></p>
+                                <ul id="event-schedule"></ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                <div id="no-active-event" style="display: none;">
+                    <h2>No Active Event</h2>
+                    <p>There are currently no active events. Please check back soon!</p>
+                </div>
             </section>
-            <section id="rsvp">
-
-                <h2>Happy Hour RSVP</h2>
-
+            <section id="rsvp" style="display: none;">
+                <h2 id="rsvp-title">Event RSVP</h2>
                 <form id="rsvp-form">
                     <label for="name">Name:</label>
                     <input type="text" id="name" required>
@@ -74,7 +73,7 @@
                 </form>
                 <p id="form-message"></p>
             </section>
-            <section id="guest-list-request">
+            <section id="guest-list-request" style="display: none;">
                 <h2>Request Guest List</h2>
                 <p>Want to see who's coming? Submit your phone number below, and we'll send you the current guest list.</p>
                 <form id="guest-list-form" style="display: none;">
@@ -87,7 +86,7 @@
             </section>
         </main>
         <footer>
-            <p>Private event | Questions? Text [Your Name] at [Your Number]</p>
+            <p>Private event | Questions? Text Todd at 613-536-8709</p>
         </footer>
     </div>
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>

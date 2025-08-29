@@ -22,6 +22,12 @@ function createCollectionName(eventName) {
         .replace(/^-|-$/g, ''); // Remove leading/trailing dashes
 }
 
+// Combined event change handler
+function handleEventChange() {
+    updateDefaultMessage();
+    populateDynamicContactList();
+}
+
 // Event management functions
 async function loadEvents() {
     const eventsList = document.getElementById('events-list');
@@ -180,6 +186,7 @@ async function loadEventOptions() {
             const option = document.createElement('option');
             option.value = data.collectionName.replace('rsvps-', ''); // Remove rsvps- prefix for value
             option.textContent = data.name;
+            option.setAttribute('data-event-name', data.name); // Store full event name for message generation
             if (data.isActive) {
                 option.textContent += ' (ACTIVE)';
                 option.selected = true;
@@ -189,6 +196,27 @@ async function loadEventOptions() {
         
     } catch (error) {
         console.error('Error loading event options:', error);
+    }
+}
+
+function updateDefaultMessage() {
+    const eventSelect = document.getElementById('event-select');
+    const messageTextarea = document.getElementById('invite-message');
+    
+    if (!eventSelect || !messageTextarea) return;
+    
+    const selectedOption = eventSelect.options[eventSelect.selectedIndex];
+    const eventName = selectedOption ? selectedOption.getAttribute('data-event-name') : null;
+    
+    if (eventName && eventName !== 'No events created yet') {
+        const defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
+
+RSVP options:
+• Reply to this text: YES [# of guests], MAYBE [# of guests], or NO  
+• Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
+        
+        // Always update the message when event changes
+        messageTextarea.value = defaultMessage;
     }
 }
 
@@ -608,39 +636,6 @@ async function deleteRequest(id) {
     }
 }
 
-async function loadContacts() {
-    const tableBody = document.getElementById('contact-table').querySelector('tbody');
-    tableBody.innerHTML = '';
-    try {
-        const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${data.name || ''}</td>
-                <td>${data.phone}</td>
-                <td><button onclick="deleteContact('${doc.id}')">Delete</button></td>
-            `;
-            tableBody.appendChild(row);
-        });
-    } catch (error) {
-        console.error('Error loading contacts:', error);
-    }
-}
-
-async function deleteContact(id) {
-    if (confirm('Delete this contact?')) {
-        try {
-            await db.collection('contacts').doc(id).delete();
-            loadContacts();
-            // Refresh the dynamic contact list as well
-            populateDynamicContactList();
-        } catch (error) {
-            console.error('Error deleting contact:', error);
-        }
-    }
-}
-
 async function checkAdminPassword() {
     console.log('checkAdminPassword called');
     const password = document.getElementById('admin-password-input').value;
@@ -651,19 +646,26 @@ async function checkAdminPassword() {
         document.getElementById('admin-password-prompt').style.display = 'none';
         document.getElementById('admin-content').style.display = 'block';
         
-        // Load all data
+        // Load all data with proper sequencing
         await loadEvents();
         await loadEventOptions();
-        populateDynamicContactList();
         loadRSVPs();
         loadGuestListRequests();
         
-        
-        // Add event change listener
-        const eventSelect = document.getElementById('event-select');
-        if (eventSelect) {
-            eventSelect.addEventListener('change', onEventChange);
-        }
+        // Set up event listener and initial load after elements are ready
+        setTimeout(() => {
+            const eventSelect = document.getElementById('event-select');
+            if (eventSelect) {
+                eventSelect.addEventListener('change', () => {
+                    updateDefaultMessage();
+                    populateDynamicContactList();
+                });
+            }
+            
+            // Initial load
+            updateDefaultMessage();
+            populateDynamicContactList();
+        }, 300);
         
         // Initialize forms now that they are visible
         if (typeof window.initializeContactForm === 'function') {
@@ -678,7 +680,6 @@ async function checkAdminPassword() {
         errorEl.style.color = 'red';
     }
 }
-
 document.addEventListener('DOMContentLoaded', () => {
     console.log('DOMContentLoaded fired');
     document.getElementById('admin-password-prompt').style.display = 'block';

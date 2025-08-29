@@ -48,30 +48,37 @@ exports.sendInvites = onRequest({ invoker: 'public' }, async (req, res) => {
             if (!twilioClient) {
                 throw new Error('Twilio client not initialized. Check environment variables.');
             }
+            
+            // Create default message with SMS instructions if no custom message provided
+            const defaultMessage = message || `You're invited to ${eventName.replace('-', ' ')} at Pine Grove Gatherings!
+
+RSVP options:
+• Reply to this text: YES [# of guests], MAYBE [# of guests], or NO  
+• Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
+
             for (const phone of phoneNumbers) {
                 if (!phone.match(/^\+1\d{10}$/)) {
                     throw new Error(`Invalid phone number: ${phone}`);
                 }
                 await twilioClient.messages.create({
-                    body: message || `You're invited to ${eventName.replace('-', ' ')} at Pine Grove Gatherings! RSVP at https://75pinegrove.com with password FriendsOnly2025`,
+                    body: defaultMessage,
                     from: process.env.TWILIO_PHONE_NUMBER,
                     to: phone
                 });
                 console.log('Sent SMS to:', phone);
                 
-                // Log the invite - NEW CODE with error handling
+                // Log the invite with error handling
                 try {
                     await db.collection('invites').add({
                         phone: phone,
                         eventName: eventName,
-                        message: message || `You're invited to ${eventName.replace('-', ' ')} at Pine Grove Gatherings! RSVP at https://75pinegrove.com with password FriendsOnly2025`,
+                        message: defaultMessage,
                         timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         method: 'sms'
                     });
                     console.log('Invite logged for:', phone);
                 } catch (inviteLogError) {
                     console.error('Error logging invite (continuing anyway):', inviteLogError);
-                    // Continue processing even if invite logging fails
                 }
                 
                 const contactSnapshot = await db.collection('contacts').where('phone', '==', phone).get();

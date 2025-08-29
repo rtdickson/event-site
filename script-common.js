@@ -1,5 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
-    if (sessionStorage.getItem('authenticated') !== 'true') {
-        window.location.href = 'index.html'; // Redirect to main if not authenticated
+    // Only redirect if we're NOT on the index page
+    if (window.location.pathname !== '/index.html' && !window.location.pathname.endsWith('/')) {
+        if (sessionStorage.getItem('authenticated') !== 'true') {
+            window.location.href = 'index.html';
+        }
     }
 });
