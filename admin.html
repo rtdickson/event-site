@@ -6,21 +6,12 @@
     <title>Admin - Pine Grove Gatherings</title>
     <link href="styles.css" rel="stylesheet"/>
     
-    <!-- Firebase Scripts -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
-            authDomain: "piveevents.firebaseapp.com",
-            projectId: "piveevents",
-            storageBucket: "piveevents.firebasestorage.app",
-            messagingSenderId: "635106763509",
-            appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
-            measurementId: "G-2VW032KXE8"
-        };
-        firebase.initializeApp(firebaseConfig);
-    </script>
+    <!-- Firebase Scripts v10 -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Shared Firebase Config -->
+    <script src="firebase-config.js"></script>
     
     <!-- Application Scripts -->
     <script src="script-twilio.js"></script>

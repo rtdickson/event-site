@@ -1,4 +1,5 @@
-const db = firebase.firestore();
+// Firebase database reference (initialized in firebase-config.js)
+// const db is available globally from firebase-config.js
 
 // Helper function to normalize phone numbers for comparison
 function normalizePhone(phone) {
@@ -22,7 +23,7 @@ function createCollectionName(eventName) {
         .replace(/^-|-$/g, ''); // Remove leading/trailing dashes
 }
 
-// Combined event change handler
+// Combined event change handler - SINGLE SOURCE OF TRUTH
 function handleEventChange() {
     updateDefaultMessage();
     populateDynamicContactList();
@@ -163,7 +164,7 @@ function clearEventForm() {
     document.getElementById('event-message').textContent = '';
 }
 
-// Load event options for the invite form dropdown - now shows event names
+// Load event options for the invite form dropdown
 async function loadEventOptions() {
     try {
         const eventSelect = document.getElementById('event-select');
@@ -180,13 +181,13 @@ async function loadEventOptions() {
             return;
         }
         
-        // Add event options from database - using collection name as value, display name as text
+        // Add event options from database
         snapshot.forEach(doc => {
             const data = doc.data();
             const option = document.createElement('option');
             option.value = data.collectionName.replace('rsvps-', ''); // Remove rsvps- prefix for value
             option.textContent = data.name;
-            option.setAttribute('data-event-name', data.name); // Store full event name for message generation
+            option.setAttribute('data-event-name', data.name);
             if (data.isActive) {
                 option.textContent += ' (ACTIVE)';
                 option.selected = true;
@@ -197,6 +198,18 @@ async function loadEventOptions() {
     } catch (error) {
         console.error('Error loading event options:', error);
     }
+}
+
+// Set up event listener for dropdown changes
+function setupEventChangeListener() {
+    const eventSelect = document.getElementById('event-select');
+    if (!eventSelect) return;
+    
+    // Remove any existing listeners first
+    eventSelect.removeEventListener('change', handleEventChange);
+    
+    // Add the new listener
+    eventSelect.addEventListener('change', handleEventChange);
 }
 
 function updateDefaultMessage() {
@@ -215,7 +228,6 @@ RSVP options:
 • Reply to this text: YES [# of guests], MAYBE [# of guests], or NO  
 • Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
         
-        // Always update the message when event changes
         messageTextarea.value = defaultMessage;
     }
 }
@@ -226,7 +238,6 @@ async function getContactInviteStatus(phone, eventName) {
         const normalizedContactPhone = normalizePhone(phone);
         
         // Check if they have an RSVP for this event
-        // Try exact match first
         let rsvpSnapshot = await db.collection(`rsvps-${eventName}`)
             .where('phone', '==', phone)
             .limit(1)
@@ -258,7 +269,6 @@ async function getContactInviteStatus(phone, eventName) {
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         
-        // Try exact match for invites first
         let inviteSnapshot = await db.collection('invites')
             .where('phone', '==', phone)
             .where('eventName', '==', eventName)
@@ -297,19 +307,39 @@ async function getContactInviteStatus(phone, eventName) {
 }
 
 // Enhanced version of populateDynamicContactList with invite status
-async function populateDynamicContactList() {
-    const listContainer = document.getElementById('dynamic-contact-list');
-    if (!listContainer) return;
+let isPopulatingContactList = false; // Flag to prevent overlapping calls
 
-    listContainer.innerHTML = '';
+async function populateDynamicContactList() {
+    // Prevent overlapping calls that cause duplicate buttons
+    if (isPopulatingContactList) {
+        return;
+    }
+    isPopulatingContactList = true;
+    
+    const listContainer = document.getElementById('dynamic-contact-list');
+    if (!listContainer) {
+        isPopulatingContactList = false;
+        return;
+    }
+
+    // Clear existing content and show loading
+    listContainer.innerHTML = '<p>Loading contacts...</p>';
     
     // Get selected event for status checking
-    const selectedEvent = document.getElementById('event-select').value;
+    const eventSelect = document.getElementById('event-select');
+    const selectedEvent = eventSelect ? eventSelect.value : '';
+    
+    if (!selectedEvent) {
+        listContainer.innerHTML = '<p>Please select an event first.</p>';
+        isPopulatingContactList = false;
+        return;
+    }
     
     try {
         const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
         
-        // Add control buttons at the top
+        // Clear loading message and add control buttons at the top
+        listContainer.innerHTML = '';
         const headerDiv = document.createElement('div');
         headerDiv.className = 'contact-list-header';
         headerDiv.innerHTML = `
@@ -379,8 +409,12 @@ async function populateDynamicContactList() {
             `;
             listContainer.appendChild(contactDiv);
         });
+        
     } catch (error) {
         console.error('Error loading dynamic contact list:', error);
+        listContainer.innerHTML = '<p style="color: red;">Error loading contacts.</p>';
+    } finally {
+        isPopulatingContactList = false;
     }
 }
 
@@ -438,7 +472,6 @@ function clearAllContacts() {
     checkboxes.forEach(cb => cb.checked = false);
 }
 
-// New function to select contacts that haven't been invited
 function selectNotInvited() {
     const checkboxes = document.querySelectorAll('#dynamic-contact-list input[type="checkbox"]');
     checkboxes.forEach(cb => {
@@ -449,13 +482,7 @@ function selectNotInvited() {
     });
 }
 
-// Update the event selector to refresh contact list when changed
-function onEventChange() {
-    populateDynamicContactList();
-}
-
 async function loadRSVPs() {
-    console.log('=== Starting loadRSVPs function ===');
     const groupsDiv = document.getElementById('rsvp-groups');
     groupsDiv.innerHTML = '';
     
@@ -487,9 +514,7 @@ async function loadRSVPs() {
     // Load contacts for name lookup
     const contactsMap = new Map();
     try {
-        console.log('Loading contacts for name lookup...');
         const contactsSnapshot = await db.collection('contacts').get();
-        console.log(`Found ${contactsSnapshot.size} contacts`);
         
         contactsSnapshot.forEach(doc => {
             const data = doc.data();
@@ -637,12 +662,11 @@ async function deleteRequest(id) {
 }
 
 async function checkAdminPassword() {
-    console.log('checkAdminPassword called');
     const password = document.getElementById('admin-password-input').value;
     const correctAdminPassword = 'AdminSecret2025';
     const errorEl = document.getElementById('admin-password-error');
+    
     if (password === correctAdminPassword) {
-        console.log('Password correct - showing admin content');
         document.getElementById('admin-password-prompt').style.display = 'none';
         document.getElementById('admin-content').style.display = 'block';
         
@@ -651,21 +675,12 @@ async function checkAdminPassword() {
         await loadEventOptions();
         loadRSVPs();
         loadGuestListRequests();
-        
-        // Set up event listener and initial load after elements are ready
+
+        // Set up initial dynamic content and event listener after a delay
         setTimeout(() => {
-            const eventSelect = document.getElementById('event-select');
-            if (eventSelect) {
-                eventSelect.addEventListener('change', () => {
-                    updateDefaultMessage();
-                    populateDynamicContactList();
-                });
-            }
-            
-            // Initial load
-            updateDefaultMessage();
-            populateDynamicContactList();
-        }, 300);
+            setupEventChangeListener();
+            handleEventChange();
+        }, 500);
         
         // Initialize forms now that they are visible
         if (typeof window.initializeContactForm === 'function') {
@@ -674,14 +689,14 @@ async function checkAdminPassword() {
         if (typeof window.initializeInviteForm === 'function') {
             window.initializeInviteForm();
         }
+        
     } else {
-        console.log('Password incorrect - showing error');
         errorEl.textContent = 'Incorrect admin password. Try again.';
         errorEl.style.color = 'red';
     }
 }
+
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOMContentLoaded fired');
     document.getElementById('admin-password-prompt').style.display = 'block';
 
     const adminPasswordForm = document.getElementById('admin-password-form');

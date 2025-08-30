@@ -106,14 +106,36 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
             return res.status(204).send('');
         }
         const { From, Body } = req.body;
-        const eventName = 'dinner-party';
+        
         try {
             if (!twilioClient) {
                 throw new Error('Twilio client not initialized. Check environment variables.');
             }
+            
+            // Find the active event instead of using hardcoded event name
+            const activeEventSnapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
+            
+            if (activeEventSnapshot.empty) {
+                console.log('No active event found for SMS RSVP');
+                // Send response indicating no active event
+                await twilioClient.messages.create({
+                    body: 'Sorry, there are currently no active events to RSVP for. Visit https://75pinegrove.com for more information.',
+                    from: process.env.TWILIO_PHONE_NUMBER,
+                    to: From
+                });
+                return res.status(200).send('<Response></Response>');
+            }
+            
+            const activeEvent = activeEventSnapshot.docs[0].data();
+            const eventCollectionName = activeEvent.collectionName;
+            const eventName = activeEvent.name;
+            
+            console.log(`Processing SMS RSVP for active event: ${eventName} (collection: ${eventCollectionName})`);
+            
             const responseText = Body.trim().toLowerCase();
             let attending = '';
             let guests = 0;
+            
             if (responseText.startsWith('yes')) {
                 attending = 'Yes';
                 guests = parseInt(responseText.split(' ')[1]) || 0;
@@ -123,9 +145,17 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
                 attending = 'Maybe';
                 guests = parseInt(responseText.split(' ')[1]) || 0;
             } else {
-                throw new Error('Invalid response');
+                // Send help message for invalid responses
+                await twilioClient.messages.create({
+                    body: `Please reply with: YES [# guests], NO, or MAYBE [# guests] to RSVP for ${eventName}. Or visit https://75pinegrove.com`,
+                    from: process.env.TWILIO_PHONE_NUMBER,
+                    to: From
+                });
+                return res.status(200).send('<Response></Response>');
             }
-            await db.collection(`rsvps-${eventName}`).add({
+            
+            // Save RSVP to the active event's collection
+            await db.collection(eventCollectionName).add({
                 name: 'Unknown (SMS)',
                 phone: From,
                 attending,
@@ -133,13 +163,17 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
                 notes: '',
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
+            
+            // Send confirmation message with event name
             await twilioClient.messages.create({
-                body: 'RSVP recorded! Visit https://75pinegrove.com for details.',
+                body: `RSVP recorded for ${eventName}! Visit https://75pinegrove.com for event details.`,
                 from: process.env.TWILIO_PHONE_NUMBER,
                 to: From
             });
-            console.log('SMS RSVP recorded from:', From);
+            
+            console.log(`SMS RSVP recorded from: ${From} for event: ${eventName}`);
             return res.status(200).send('<Response></Response>');
+            
         } catch (error) {
             console.error('Error handling SMS:', error);
             return res.status(200).send('<Response></Response>');
