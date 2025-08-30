@@ -12,7 +12,7 @@
         <h2>Enter Password</h2>
         <input type="password" id="password-input" placeholder="Password">
         <br>
-        <button onclick="checkPassword()">Submit</button>
+        <button type="button">Submit</button>
         <p id="password-error" style="color: red;"></p>
     </div>
     <div id="main-content" style="display: none;">
@@ -89,8 +89,16 @@
             <p>Private event | Questions? Text Todd at 613-536-8709</p>
         </footer>
     </div>
+    
+    <!-- Firebase Scripts v10 -->
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Centralized Firebase Config -->
+    <script src="firebase-config.js"></script>
+    <script src="auth.js"></script>
+    <!-- Application Script -->
     <script src="script.js"></script>
+    
 </body>
 </html>

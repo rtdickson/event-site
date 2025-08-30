@@ -1,17 +1,9 @@
-const firebaseConfig = {
-    apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
-    authDomain: "piveevents.firebaseapp.com",
-    projectId: "piveevents",
-    storageBucket: "piveevents.firebasestorage.app",
-    messagingSenderId: "635106763509",
-    appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
-    measurementId: "G-2VW032KXE8"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+// Firebase config is loaded from firebase-config.js
+// const db is available globally from firebase-config.js
 
 // Store active event data globally
+console.log('script.js loaded');
+
 let activeEventData = null;
 
 async function loadActiveEvent() {
@@ -83,30 +75,78 @@ async function loadActiveEvent() {
     }
 }
 
-function checkPassword() {
-    const password = document.getElementById('password-input').value;
-    const correctPassword = 'FriendsOnly2025'; // Guest password
-    const errorEl = document.getElementById('password-error');
-    if (password === correctPassword) {
-        sessionStorage.setItem('authenticated', 'true');
-        document.getElementById('password-prompt').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        // Load the active event after authentication
-        loadActiveEvent();
-    } else {
-        errorEl.textContent = 'Incorrect password. Try again.';
-    }
+// Page initialization function called by auth system
+function initializePage() {
+    loadActiveEvent();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    if (sessionStorage.getItem('authenticated') === 'true') {
+    // Check if already authenticated
+    if (window.auth && window.auth.isAuthenticated()) {
+        document.getElementById('password-prompt').style.display = 'none';
         document.getElementById('main-content').style.display = 'block';
-        // Load the active event on page load if already authenticated
-        loadActiveEvent();
+        initializePage();
     } else {
         document.getElementById('password-prompt').style.display = 'block';
+        
+        // Add enter key support for password input
+        const passwordInput = document.getElementById('password-input');
+        if (passwordInput) {
+            passwordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    handlePasswordSubmit();
+                }
+            });
+            passwordInput.focus();
+        }
+        
+        // Update the button onclick to use the correct function
+        const submitButton = document.querySelector('#password-prompt button');
+        if (submitButton) {
+            submitButton.onclick = handlePasswordSubmit;
+            submitButton.removeAttribute('onclick');
+        }
     }
 });
+
+// Handle password submission
+async function handlePasswordSubmit() {
+    const passwordInput = document.getElementById('password-input');
+    const errorEl = document.getElementById('password-error');
+    const submitButton = document.querySelector('#password-prompt button');
+    
+    if (!passwordInput || !passwordInput.value) {
+        errorEl.textContent = 'Please enter a password.';
+        return;
+    }
+
+    // Show loading state
+    submitButton.disabled = true;
+    submitButton.textContent = 'Verifying...';
+    errorEl.textContent = '';
+
+    try {
+        const isValid = await window.auth.login(passwordInput.value, 'guest');
+        
+        if (isValid) {
+            // Success - show content
+            document.getElementById('password-prompt').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            initializePage();
+        } else {
+            errorEl.textContent = 'Incorrect password. Please try again.';
+            passwordInput.value = '';
+            passwordInput.focus();
+        }
+    } catch (error) {
+        console.error('Authentication error:', error);
+        errorEl.textContent = 'Authentication failed. Please try again.';
+    } finally {
+        // Reset button state
+        submitButton.disabled = false;
+        submitButton.textContent = 'Submit';
+    }
+}
 
 document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -116,6 +156,13 @@ document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
         document.getElementById('form-message').style.color = 'red';
         return;
     }
+    
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+    
+    // Show loading state
+    submitButton.disabled = true;
+    submitButton.textContent = 'Submitting...';
     
     const name = document.getElementById('name').value;
     const phone = document.getElementById('phone').value;
@@ -143,15 +190,28 @@ document.getElementById('rsvp-form').addEventListener('submit', async (e) => {
         document.getElementById('guests').value = '1'; // Reset to default
     } catch (error) {
         console.error('Error submitting RSVP:', error);
-        messageEl.textContent = 'Error submitting RSVP. Try again.';
+        messageEl.textContent = 'Error submitting RSVP. Please try again.';
         messageEl.style.color = 'red';
+    } finally {
+        // Reset button state
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
     }
 });
 
 document.getElementById('guest-list-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    
+    const submitButton = e.target.querySelector('button[type="submit"]');
+    const originalText = submitButton.textContent;
+    
+    // Show loading state
+    submitButton.disabled = true;
+    submitButton.textContent = 'Submitting...';
+    
     const phone = document.getElementById('request-phone').value;
     const messageEl = document.getElementById('request-message');
+    
     try {
         await db.collection('guest-list-requests').add({
             phone,
@@ -163,7 +223,12 @@ document.getElementById('guest-list-form').addEventListener('submit', async (e) 
         document.getElementById('guest-list-form').style.display = 'none';
         document.querySelector('#guest-list-request button').style.display = 'block';
     } catch (error) {
-        messageEl.textContent = 'Error submitting request. Try again.';
+        console.error('Error submitting guest list request:', error);
+        messageEl.textContent = 'Error submitting request. Please try again.';
         messageEl.style.color = 'red';
+    } finally {
+        // Reset button state
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
     }
 });

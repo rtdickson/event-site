@@ -29,6 +29,29 @@ function handleEventChange() {
     populateDynamicContactList();
 }
 
+// Initialize admin functionality - called by auth system
+async function initializeAdmin() {
+    // Load all data with proper sequencing
+    await loadEvents();
+    await loadEventOptions();
+    loadRSVPs();
+    loadGuestListRequests();
+
+    // Set up initial dynamic content and event listener after a delay
+    setTimeout(() => {
+        setupEventChangeListener();
+        handleEventChange();
+    }, 500);
+    
+    // Initialize forms now that they are visible
+    if (typeof window.initializeContactForm === 'function') {
+        window.initializeContactForm();
+    }
+    if (typeof window.initializeInviteForm === 'function') {
+        window.initializeInviteForm();
+    }
+}
+
 // Event management functions
 async function loadEvents() {
     const eventsList = document.getElementById('events-list');
@@ -499,13 +522,6 @@ async function loadRSVPs() {
                     collectionName: data.collectionName
                 };
             });
-        } else {
-            // Fallback to hardcoded collections if no events exist
-            eventCollections = [
-                { name: 'Dinner Party', collectionName: 'rsvps-dinner-party' },
-                { name: 'Fall Picnic', collectionName: 'rsvps-fall-picnic' },
-                { name: 'Halloween Party', collectionName: 'rsvps-halloween-party' }
-            ];
         }
     } catch (error) {
         console.error('Error loading events for RSVPs:', error);
@@ -520,7 +536,6 @@ async function loadRSVPs() {
             const data = doc.data();
             const normalizedPhone = normalizePhone(data.phone);
             if (data.phone) {
-                // Store both the original and normalized versions
                 contactsMap.set(data.phone, data.name);
                 if (normalizedPhone && normalizedPhone !== data.phone) {
                     contactsMap.set(normalizedPhone, data.name);
@@ -558,7 +573,6 @@ async function loadRSVPs() {
             snapshot.forEach(doc => {
                 const data = doc.data();
                 
-                // Look up name from contacts if name is "Unknown", "Unknown (SMS)", or empty but we have a phone
                 let displayName = data.name;
                 const shouldLookup = (
                     data.name === 'Unknown' || 
@@ -569,11 +583,9 @@ async function loadRSVPs() {
                 );
                 
                 if (shouldLookup && data.phone) {
-                    // Try exact match first
                     if (contactsMap.has(data.phone)) {
                         displayName = contactsMap.get(data.phone);
                     } else {
-                        // Try normalized match
                         const normalizedRSVPPhone = normalizePhone(data.phone);
                         if (normalizedRSVPPhone && contactsMap.has(normalizedRSVPPhone)) {
                             displayName = contactsMap.get(normalizedRSVPPhone);
@@ -604,7 +616,6 @@ async function deleteRSVP(id, collectionName) {
         try {
             await db.collection(collectionName).doc(id).delete();
             loadRSVPs();
-            // Refresh contact list to update status
             populateDynamicContactList();
         } catch (error) {
             console.error('Error deleting RSVP:', error);
@@ -622,7 +633,6 @@ async function deleteAllForEvent(collectionName) {
             });
             await batch.commit();
             loadRSVPs();
-            // Refresh contact list to update status
             populateDynamicContactList();
         } catch (error) {
             console.error(`Error deleting all for ${collectionName}:`, error);
@@ -661,84 +671,113 @@ async function deleteRequest(id) {
     }
 }
 
-async function checkAdminPassword() {
-    const password = document.getElementById('admin-password-input').value;
-    const correctAdminPassword = 'AdminSecret2025';
+// Handle admin password submission
+async function handleAdminPasswordSubmit() {
+    const passwordInput = document.getElementById('admin-password-input');
     const errorEl = document.getElementById('admin-password-error');
+    const submitButton = document.querySelector('#admin-password-prompt button');
     
-    if (password === correctAdminPassword) {
-        document.getElementById('admin-password-prompt').style.display = 'none';
-        document.getElementById('admin-content').style.display = 'block';
-        
-        // Load all data with proper sequencing
-        await loadEvents();
-        await loadEventOptions();
-        loadRSVPs();
-        loadGuestListRequests();
+    if (!passwordInput || !passwordInput.value) {
+        errorEl.textContent = 'Please enter the admin password.';
+        return;
+    }
 
-        // Set up initial dynamic content and event listener after a delay
-        setTimeout(() => {
-            setupEventChangeListener();
-            handleEventChange();
-        }, 500);
+    submitButton.disabled = true;
+    submitButton.textContent = 'Verifying...';
+    errorEl.textContent = '';
+
+    try {
+        const isValid = await window.auth.login(passwordInput.value, 'admin');
         
-        // Initialize forms now that they are visible
-        if (typeof window.initializeContactForm === 'function') {
-            window.initializeContactForm();
+        if (isValid) {
+            document.getElementById('admin-password-prompt').style.display = 'none';
+            document.getElementById('admin-content').style.display = 'block';
+            initializeAdmin();
+        } else {
+            errorEl.textContent = 'Incorrect admin password. Access denied.';
+            passwordInput.value = '';
+            passwordInput.focus();
         }
-        if (typeof window.initializeInviteForm === 'function') {
-            window.initializeInviteForm();
-        }
-        
-    } else {
-        errorEl.textContent = 'Incorrect admin password. Try again.';
-        errorEl.style.color = 'red';
+    } catch (error) {
+        console.error('Admin authentication error:', error);
+        errorEl.textContent = 'Authentication failed. Please try again.';
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Submit';
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('admin-password-prompt').style.display = 'block';
+    // Check if already authenticated as admin
+    if (window.auth && window.auth.hasRole('admin')) {
+        document.getElementById('admin-password-prompt').style.display = 'none';
+        document.getElementById('admin-content').style.display = 'block';
+        initializeAdmin();
+    } else {
+        document.getElementById('admin-password-prompt').style.display = 'block';
+        
+        // Add enter key support for admin password
+        const adminPasswordInput = document.getElementById('admin-password-input');
+        if (adminPasswordInput) {
+            adminPasswordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    handleAdminPasswordSubmit();  // CHANGED: was checkAdminPassword()
+                }
+            });
+            adminPasswordInput.focus();
+        }
+    }
 
+    // Admin password form handler
     const adminPasswordForm = document.getElementById('admin-password-form');
     if (adminPasswordForm) {
         adminPasswordForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            checkAdminPassword();
+            handleAdminPasswordSubmit();  // CHANGED: was checkAdminPassword()
         });
     }
 
-    // Add event form submission handler
-    const eventForm = document.getElementById('event-form');
-    if (eventForm) {
-        eventForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const eventName = document.getElementById('event-name').value;
-            const eventData = {
-                name: eventName,
-                date: document.getElementById('event-date').value,
-                description: document.getElementById('event-description').value,
-                menu: document.getElementById('event-menu').value.split('\n').filter(item => item.trim()),
-                whatToBring: document.getElementById('event-bring').value,
-                schedule: document.getElementById('event-schedule').value.split('\n').filter(item => item.trim()),
-                collectionName: createCollectionName(eventName),
-                isActive: document.getElementById('event-active').checked
-            };
-            
-            const editId = eventForm.getAttribute('data-edit-id');
-            const success = await saveEvent(eventData, editId);
-            
-            const messageEl = document.getElementById('event-message');
-            if (success) {
-                messageEl.textContent = editId ? 'Event updated successfully!' : 'Event created successfully!';
-                messageEl.style.color = 'green';
-                clearEventForm();
-                loadEvents();
-                loadEventOptions(); // Refresh the invite form dropdown
-            } else {
-                messageEl.textContent = 'Error saving event. Please try again.';
-                messageEl.style.color = 'red';
-            }
-        });
-    }
-});
+    // Event form submission handler
+const eventForm = document.getElementById('event-form');
+if (eventForm) {
+    eventForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const submitButton = e.target.querySelector('button[type="submit"]');
+        const originalText = submitButton.textContent;
+        
+        submitButton.disabled = true;
+        submitButton.textContent = 'Saving...';
+        
+        const eventName = document.getElementById('event-name').value;
+        const eventData = {
+            name: eventName,
+            date: document.getElementById('event-date').value,
+            description: document.getElementById('event-description').value,
+            menu: document.getElementById('event-menu').value.split('\n').filter(item => item.trim()),
+            whatToBring: document.getElementById('event-bring').value,
+            schedule: document.getElementById('event-schedule').value.split('\n').filter(item => item.trim()),
+            collectionName: createCollectionName(eventName),
+            isActive: document.getElementById('event-active').checked
+        };
+        
+        const editId = eventForm.getAttribute('data-edit-id');
+        const success = await saveEvent(eventData, editId);
+        
+        const messageEl = document.getElementById('event-message');
+        if (success) {
+            messageEl.textContent = editId ? 'Event updated successfully!' : 'Event created successfully!';
+            messageEl.style.color = 'green';
+            clearEventForm();
+            loadEvents();
+            loadEventOptions();
+        } else {
+            messageEl.textContent = 'Error saving event. Please try again.';
+            messageEl.style.color = 'red';
+        }
+        
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+    });
+}  // closes the if (eventForm) block
+});    // closes the DOMContentLoaded event listener

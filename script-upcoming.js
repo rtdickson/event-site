@@ -1,15 +1,5 @@
-const firebaseConfig = {
-    apiKey: "AIzaSyDrunOzCIlX9iqYEhpWGqDlN8sUBaF44po",
-    authDomain: "piveevents.firebaseapp.com",
-    projectId: "piveevents",
-    storageBucket: "piveevents.firebasestorage.app",
-    messagingSenderId: "635106763509",
-    appId: "1:635106763509:web:1f18f4e10da36177f0dbbc",
-    measurementId: "G-2VW032KXE8"
-};
-
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+// Firebase config is loaded from firebase-config.js
+// const db is available globally from firebase-config.js
 
 async function loadUpcomingEvents() {
     try {
@@ -81,15 +71,16 @@ async function loadUpcomingEvents() {
         
     } catch (error) {
         console.error('Error loading upcoming events:', error);
-        document.getElementById('events-loading').textContent = 'Error loading events. Please refresh the page.';
+        const loadingDiv = document.getElementById('events-loading');
+        loadingDiv.textContent = 'Error loading events. Please refresh the page.';
+        loadingDiv.style.color = 'red';
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Check authentication
-    if (sessionStorage.getItem('authenticated') !== 'true') {
-        window.location.href = 'index.html';
-        return;
+    // Use new auth system instead of sessionStorage
+    if (!window.auth || !window.auth.requireAuth('guest')) {
+        return; // Auth will handle redirect
     }
     
     // Load upcoming events
