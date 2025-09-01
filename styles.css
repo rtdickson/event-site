@@ -1,14 +1,62 @@
+/*Original Colorscheme*/
+:root {
+    --primary-dark: #4a4e69;
+    --primary-medium: #6b728e;
+    --background: #f9f9f9;
+    --text-color: #333;
+}
+
+/*Standard Ligh*/
+/*:root {
+    --primary-dark: #1976d2;
+    --primary-medium: #2196f3;
+    --background: #ffffff;
+    --text-color: #212121;
+}*/
+/*Standard Dark*/
+/*:root {
+    --primary-dark: #0d47a1;
+    --primary-medium: #1976d2;
+    --background: #121212;
+    --text-color: #e0e0e0;
+}*/
+
+
+/*Forest CS*/
+/*:root {
+    --primary-dark: #2e7d32;
+    --primary-medium: #4caf50;
+    --background: #f1f8e9;
+    --text-color: #1b5e20;
+}*/
+
+/*WineCountry*/
+/*:root {
+    --primary-dark: #6a1b9a;
+    --primary-medium: #8e24aa;
+    --background: #fdf7f7;
+    --text-color: #4a148c;
+}*/
+
+/*Ocean*/
+/*:root {
+    --primary-dark: #00695c;
+    --primary-medium: #00acc1;
+    --background: #f0fdff;
+    --text-color: #004d5c;
+}*/
+
 body {
     font-family: 'Roboto', sans-serif;
-    background-color: #f9f9f9;
-    color: #333;
+    background-color: var(--background);
+    color: var(--text-color);
     margin: 0;
     padding: 0;
     line-height: 1.6;
 }
 
 header {
-    background: linear-gradient(to right, #4a4e69, #6b728e);
+    background: linear-gradient(to right, var(--primary-dark), var(--primary-medium));
     color: white;
     text-align: center;
     padding: 1rem;
@@ -18,7 +66,7 @@ header .banner {
     width: 100%;
     max-height: 400px;
     object-fit: cover;
-    border-bottom: 2px solid #4a4e69;
+    border-bottom: 2px solid var(--primary-dark);
 }
 
 header h1 {
@@ -59,7 +107,7 @@ section {
 
 h2, h3 {
     font-family: 'Playfair Display', serif;
-    color: #4a4e69;
+    color: var(--primary-dark);
 }
 
 .event-card {
@@ -112,7 +160,7 @@ textarea {
 }
 
 button {
-    background-color: #6b728e;
+    background-color: var(--primary-medium);
     color: white;
     border: none;
     padding: 0.75rem;
@@ -122,7 +170,7 @@ button {
 }
 
 button:hover {
-    background-color: #4a4e69;
+    background-color: var(--primary-dark);
 }
 
 #form-message, #upload-message, #request-message {
@@ -146,7 +194,7 @@ button:hover {
 }
 
 #password-prompt button, #admin-password-prompt button {
-    background-color: #6b728e;
+    background-color: var(--primary-medium);
     color: white;
     border: none;
     padding: 0.75rem;
@@ -155,7 +203,7 @@ button:hover {
 }
 
 #password-prompt button:hover, #admin-password-prompt button:hover {
-    background-color: #4a4e69;
+    background-color: var(--primary-dark);
 }
 
 table {
@@ -171,14 +219,14 @@ th, td {
 }
 
 th {
-    background-color: #6b728e;
+    background-color: var(--primary-medium);
     color: white;
 }
 
 footer {
     text-align: center;
     padding: 1rem;
-    background-color: #4a4e69;
+    background-color: var(--primary-dark);
     color: white;
 }
 

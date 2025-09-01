@@ -27,21 +27,27 @@ function createCollectionName(eventName) {
 function handleEventChange() {
     updateDefaultMessage();
     populateDynamicContactList();
+    updateRSVPOnlyContactList(); // New function
 }
 
 // Initialize admin functionality - called by auth system
 async function initializeAdmin() {
-    // Load all data with proper sequencing
+    console.log('initializeAdmin called'); // Debug line
+    
+    // Load all data with proper sequencing - AWAIT each one
     await loadEvents();
-    await loadEventOptions();
-    loadRSVPs();
+    await loadEventOptions(); // Make sure this completes before moving on
+    console.log('loadEventOptions completed'); // Debug line
+    
+    loadRSVPs(); // These can run async
     loadGuestListRequests();
 
-    // Set up initial dynamic content and event listener after a delay
+    // Set up initial dynamic content and event listener after everything loads
     setTimeout(() => {
+        console.log('Setting up event listeners'); // Debug line
         setupEventChangeListener();
         handleEventChange();
-    }, 500);
+    }, 1000); // Increased delay to 1 second
     
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
@@ -187,40 +193,221 @@ function clearEventForm() {
     document.getElementById('event-message').textContent = '';
 }
 
-// Load event options for the invite form dropdown
 async function loadEventOptions() {
+    console.log('=== loadEventOptions START ===');
     try {
         const eventSelect = document.getElementById('event-select');
-        if (!eventSelect) return;
+        console.log('eventSelect element:', eventSelect);
         
+        if (!eventSelect) {
+            console.log('ERROR: event-select element not found!');
+            return;
+        }
+        
+        console.log('Querying events...');
         const snapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
+        console.log('Events found:', snapshot.size);
         
         // Clear existing options
         eventSelect.innerHTML = '';
         
-        // Add default message if no events exist
         if (snapshot.empty) {
+            console.log('No events in database');
             eventSelect.innerHTML = '<option value="">No events created yet</option>';
             return;
         }
+
+        // Find active event
+        const activeEvent = snapshot.docs.find(doc => doc.data().isActive);
+        console.log('Active event found:', activeEvent ? activeEvent.data().name : 'none');
         
-        // Add event options from database
+        // Add special RSVP-only option for active event first
+        if (activeEvent) {
+            const activeData = activeEvent.data();
+            const option = document.createElement('option');
+            option.value = `rsvp-only-${activeData.collectionName}`;
+            option.textContent = `${activeData.name} - RSVP'd Only (Yes/Maybe)`;
+            option.setAttribute('data-event-name', activeData.name);
+            option.setAttribute('data-is-rsvp-only', 'true');
+            eventSelect.appendChild(option);
+            console.log('Added RSVP-only option:', option.textContent);
+            
+            // Add a separator
+            const separator = document.createElement('option');
+            separator.disabled = true;
+            separator.textContent = '──────────────────';
+            eventSelect.appendChild(separator);
+        }
+        
+        // Add regular event options
         snapshot.forEach(doc => {
             const data = doc.data();
             const option = document.createElement('option');
-            option.value = data.collectionName.replace('rsvps-', ''); // Remove rsvps- prefix for value
+            option.value = data.collectionName.replace('rsvps-', '');
             option.textContent = data.name;
             option.setAttribute('data-event-name', data.name);
+            option.setAttribute('data-is-rsvp-only', 'false');
             if (data.isActive) {
                 option.textContent += ' (ACTIVE)';
-                option.selected = true;
+                // Don't auto-select if we have RSVP option
+                if (!activeEvent) {
+                    option.selected = true;
+                }
             }
             eventSelect.appendChild(option);
+            console.log('Added regular option:', option.textContent);
+        });
+        
+        console.log('Final dropdown HTML:', eventSelect.innerHTML);
+        
+    } catch (error) {
+        console.error('Error in loadEventOptions:', error);
+    }
+    console.log('=== loadEventOptions END ===');
+}
+// 3. Add new function to populate contact list with RSVP'd attendees
+async function updateRSVPOnlyContactList() {
+    const eventSelect = document.getElementById('event-select');
+    const listContainer = document.getElementById('dynamic-contact-list');
+    
+    if (!eventSelect || !listContainer) return;
+    
+    const selectedOption = eventSelect.options[eventSelect.selectedIndex];
+    const isRSVPOnly = selectedOption && selectedOption.getAttribute('data-is-rsvp-only') === 'true';
+    
+    if (!isRSVPOnly) return; // Regular contact list handling
+    
+    // Show loading for RSVP-only list
+    listContainer.innerHTML = '<p>Loading RSVP attendees...</p>';
+    
+    try {
+        // Extract collection name from the value
+        const selectedValue = eventSelect.value;
+        const collectionName = selectedValue.replace('rsvp-only-', '');
+        
+        // Get RSVPs with Yes or Maybe
+        const rsvpSnapshot = await db.collection(collectionName)
+            .where('attending', 'in', ['Yes', 'Maybe'])
+            .get();
+        
+        if (rsvpSnapshot.empty) {
+            listContainer.innerHTML = '<p>No confirmed attendees yet for this event.</p>';
+            return;
+        }
+        
+        // Build RSVP contact list
+        listContainer.innerHTML = '';
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'contact-list-header';
+        headerDiv.innerHTML = `
+            <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
+                <button onclick="addSelectedRSVPsToInvite()" style="background-color: #4CAF50; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Add Selected</button>
+                <button onclick="selectAllRSVPs()" style="background-color: #2196F3; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Select All</button>
+                <button onclick="clearAllRSVPs()" style="background-color: #f44336; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer;">Clear All</button>
+            </div>
+            <div style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                Showing attendees who RSVP'd Yes or Maybe to this event (${rsvpSnapshot.size} people)
+            </div>
+        `;
+        listContainer.appendChild(headerDiv);
+        
+        // Load contacts for name lookup
+        const contactsMap = new Map();
+        try {
+            const contactsSnapshot = await db.collection('contacts').get();
+            contactsSnapshot.forEach(doc => {
+                const data = doc.data();
+                const normalizedPhone = normalizePhone(data.phone);
+                if (data.phone) {
+                    contactsMap.set(data.phone, data.name);
+                    if (normalizedPhone && normalizedPhone !== data.phone) {
+                        contactsMap.set(normalizedPhone, data.name);
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error loading contacts for RSVP lookup:', error);
+        }
+        
+        // Add each RSVP attendee
+        rsvpSnapshot.forEach(doc => {
+            const rsvpData = doc.data();
+            
+            // Try to get name from contacts, fall back to RSVP name
+            let displayName = rsvpData.name;
+            if (rsvpData.phone && contactsMap.has(rsvpData.phone)) {
+                displayName = contactsMap.get(rsvpData.phone);
+            } else if (rsvpData.phone) {
+                const normalizedPhone = normalizePhone(rsvpData.phone);
+                if (normalizedPhone && contactsMap.has(normalizedPhone)) {
+                    displayName = contactsMap.get(normalizedPhone);
+                }
+            }
+            
+            const statusColor = rsvpData.attending === 'Yes' ? '#4CAF50' : '#FF9800';
+            const guestText = rsvpData.guests > 1 ? ` (+${rsvpData.guests - 1} guests)` : '';
+            
+            const contactDiv = document.createElement('div');
+            contactDiv.className = 'contact-entry rsvp-entry';
+            contactDiv.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px; padding: 6px; border: 1px solid #ddd; border-radius: 4px;';
+            contactDiv.innerHTML = `
+                <input type="checkbox" id="rsvp-${doc.id}" value="${rsvpData.phone}" style="margin-right: 8px;" />
+                <div style="width: 12px; height: 12px; border-radius: 50%; background-color: ${statusColor}; margin-right: 8px; flex-shrink: 0;" title="RSVP: ${rsvpData.attending}"></div>
+                <label for="rsvp-${doc.id}" style="flex: 1; cursor: pointer;">
+                    <strong>${displayName || 'Unknown'}</strong>: ${rsvpData.phone || 'No phone'}
+                    <span style="font-size: 11px; color: ${statusColor}; margin-left: 8px;">${rsvpData.attending}${guestText}</span>
+                </label>
+                <button onclick="addToInvite('${rsvpData.phone}')" style="background: none; border: none; font-size: 18px; color: #4CAF50; cursor: pointer; padding: 4px;" title="Add to invite">+</button>
+            `;
+            listContainer.appendChild(contactDiv);
         });
         
     } catch (error) {
-        console.error('Error loading event options:', error);
+        console.error('Error loading RSVP attendees:', error);
+        listContainer.innerHTML = '<p style="color: red;">Error loading RSVP attendees.</p>';
     }
+}
+
+// 4. Add helper functions for RSVP selection
+function addSelectedRSVPsToInvite() {
+    const checkboxes = document.querySelectorAll('#dynamic-contact-list .rsvp-entry input[type="checkbox"]:checked');
+    const inputField = document.getElementById('phone-numbers');
+    
+    if (checkboxes.length === 0) {
+        alert('Please select at least one attendee to add.');
+        return;
+    }
+    
+    const selectedNumbers = Array.from(checkboxes).map(cb => cb.value).filter(val => val && val !== 'No phone');
+    const existingNumbers = inputField.value.trim() === '' ? [] : inputField.value.split(',').map(num => num.trim());
+    
+    // Filter out duplicates and invalid numbers
+    const newNumbers = selectedNumbers.filter(num => num && !existingNumbers.includes(num));
+    
+    if (newNumbers.length === 0) {
+        alert('All selected attendees are already in the invite list or have no phone numbers.');
+        return;
+    }
+    
+    // Add new numbers
+    if (inputField.value.trim() === '') {
+        inputField.value = newNumbers.join(',');
+    } else {
+        inputField.value += ',' + newNumbers.join(',');
+    }
+    
+    // Uncheck all checkboxes
+    checkboxes.forEach(cb => cb.checked = false);
+}
+
+function selectAllRSVPs() {
+    const checkboxes = document.querySelectorAll('#dynamic-contact-list .rsvp-entry input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = true);
+}
+
+function clearAllRSVPs() {
+    const checkboxes = document.querySelectorAll('#dynamic-contact-list .rsvp-entry input[type="checkbox"]');
+    checkboxes.forEach(cb => cb.checked = false);
 }
 
 // Set up event listener for dropdown changes
@@ -235,6 +422,7 @@ function setupEventChangeListener() {
     eventSelect.addEventListener('change', handleEventChange);
 }
 
+// 5. Update the updateDefaultMessage function to handle RSVP-only messaging
 function updateDefaultMessage() {
     const eventSelect = document.getElementById('event-select');
     const messageTextarea = document.getElementById('invite-message');
@@ -243,13 +431,26 @@ function updateDefaultMessage() {
     
     const selectedOption = eventSelect.options[eventSelect.selectedIndex];
     const eventName = selectedOption ? selectedOption.getAttribute('data-event-name') : null;
+    const isRSVPOnly = selectedOption && selectedOption.getAttribute('data-is-rsvp-only') === 'true';
     
     if (eventName && eventName !== 'No events created yet') {
-        const defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
+        let defaultMessage;
+        
+        if (isRSVPOnly) {
+            // Special message for RSVP'd attendees
+            defaultMessage = `Hi! Quick update about ${eventName}:
+
+[Your update message here - maybe last minute details, timing changes, what to bring, etc.]
+
+Thanks for confirming your attendance! See you there!`;
+        } else {
+            // Regular invitation message
+            defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
 
 RSVP options:
 • Reply to this text: YES [# of guests], MAYBE [# of guests], or NO  
 • Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
+        }
         
         messageTextarea.value = defaultMessage;
     }
@@ -332,24 +533,35 @@ async function getContactInviteStatus(phone, eventName) {
 // Enhanced version of populateDynamicContactList with invite status
 let isPopulatingContactList = false; // Flag to prevent overlapping calls
 
+// 6. Update the populateDynamicContactList function to handle both cases
 async function populateDynamicContactList() {
-    // Prevent overlapping calls that cause duplicate buttons
+    // Prevent overlapping calls
     if (isPopulatingContactList) {
         return;
     }
     isPopulatingContactList = true;
     
     const listContainer = document.getElementById('dynamic-contact-list');
-    if (!listContainer) {
+    const eventSelect = document.getElementById('event-select');
+    
+    if (!listContainer || !eventSelect) {
         isPopulatingContactList = false;
         return;
     }
 
-    // Clear existing content and show loading
+    const selectedOption = eventSelect.options[eventSelect.selectedIndex];
+    const isRSVPOnly = selectedOption && selectedOption.getAttribute('data-is-rsvp-only') === 'true';
+    
+    if (isRSVPOnly) {
+        // Handle RSVP-only list - DON'T call updateRSVPOnlyContactList here
+        // It will be called separately by handleEventChange()
+        isPopulatingContactList = false;
+        return; // Exit early and let updateRSVPOnlyContactList handle it
+    }
+    
+    // Original contact list logic continues here ONLY for non-RSVP selections
     listContainer.innerHTML = '<p>Loading contacts...</p>';
     
-    // Get selected event for status checking
-    const eventSelect = document.getElementById('event-select');
     const selectedEvent = eventSelect ? eventSelect.value : '';
     
     if (!selectedEvent) {
@@ -357,6 +569,8 @@ async function populateDynamicContactList() {
         isPopulatingContactList = false;
         return;
     }
+    
+    // ... rest of your existing regular contacts code
     
     try {
         const snapshot = await db.collection('contacts').orderBy('timestamp', 'desc').get();
