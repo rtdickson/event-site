@@ -920,6 +920,149 @@ async function handleAdminPasswordSubmit() {
         submitButton.textContent = 'Submit';
     }
 }
+// Add this to script-admin.js
+
+// New function to load and display RSVP statistics
+async function loadRSVPStats() {
+    const statsContainer = document.getElementById('rsvp-stats-container');
+    if (!statsContainer) return;
+    
+    statsContainer.innerHTML = '<p>Loading RSVP statistics...</p>';
+    
+    try {
+        // Get all events
+        const eventsSnapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
+        
+        if (eventsSnapshot.empty) {
+            statsContainer.innerHTML = '<p>No events found.</p>';
+            return;
+        }
+        
+        statsContainer.innerHTML = '';
+        
+        // Process each event
+        for (const eventDoc of eventsSnapshot.docs) {
+            const eventData = eventDoc.data();
+            
+            // Get RSVPs for this event
+            const rsvpSnapshot = await db.collection(eventData.collectionName).get();
+            
+            // Count RSVPs by status
+            const stats = {
+                yes: 0,
+                maybe: 0,
+                no: 0,
+                totalGuests: 0
+            };
+            
+            rsvpSnapshot.forEach(doc => {
+                const rsvp = doc.data();
+                const attending = rsvp.attending ? rsvp.attending.toLowerCase() : '';
+                const guests = parseInt(rsvp.guests) || 1;
+                
+                if (attending === 'yes') {
+                    stats.yes++;
+                    stats.totalGuests += guests;
+                } else if (attending === 'maybe') {
+                    stats.maybe++;
+                    stats.totalGuests += guests;
+                } else if (attending === 'no') {
+                    stats.no++;
+                }
+            });
+            
+            // Create stats card
+            const statsCard = document.createElement('div');
+            statsCard.className = 'stats-card';
+            statsCard.innerHTML = `
+                <div class="stats-header">
+                    <h4>${eventData.name} ${eventData.isActive ? '<span style="color: green;">(ACTIVE)</span>' : ''}</h4>
+                    <div class="stats-date">${eventData.date}</div>
+                </div>
+                <div class="stats-row">
+                    <div class="stat-item yes">
+                        <span class="stat-number">${stats.yes}</span>
+                        <span class="stat-label">Yes</span>
+                    </div>
+                    <div class="stat-item maybe">
+                        <span class="stat-number">${stats.maybe}</span>
+                        <span class="stat-label">Maybe</span>
+                    </div>
+                    <div class="stat-item no">
+                        <span class="stat-number">${stats.no}</span>
+                        <span class="stat-label">No</span>
+                    </div>
+                    <div class="stat-item total">
+                        <span class="stat-number">${stats.totalGuests}</span>
+                        <span class="stat-label">Expected Guests</span>
+                    </div>
+                </div>
+            `;
+            statsContainer.appendChild(statsCard);
+        }
+        
+    } catch (error) {
+        console.error('Error loading RSVP stats:', error);
+        statsContainer.innerHTML = '<p style="color: red;">Error loading statistics.</p>';
+    }
+}
+
+// Update the initializeAdmin function to include stats loading
+async function initializeAdmin() {
+    console.log('initializeAdmin called');
+    
+    await loadEvents();
+    await loadEventOptions();
+    await loadRSVPStats(); // Add this line
+    
+    loadRSVPs();
+    loadGuestListRequests();
+
+    setTimeout(() => {
+        console.log('Setting up event listeners');
+        setupEventChangeListener();
+        handleEventChange();
+    }, 1000);
+    
+    if (typeof window.initializeContactForm === 'function') {
+        window.initializeContactForm();
+    }
+    if (typeof window.initializeInviteForm === 'function') {
+        window.initializeInviteForm();
+    }
+}
+
+// Also update loadRSVPs to refresh stats when RSVPs change
+async function deleteRSVP(id, collectionName) {
+    if (confirm('Delete this RSVP?')) {
+        try {
+            await db.collection(collectionName).doc(id).delete();
+            loadRSVPs();
+            loadRSVPStats(); // Add this line
+            populateDynamicContactList();
+        } catch (error) {
+            console.error('Error deleting RSVP:', error);
+        }
+    }
+}
+
+async function deleteAllForEvent(collectionName) {
+    if (confirm(`Delete all RSVPs for this event?`)) {
+        try {
+            const snapshot = await db.collection(collectionName).get();
+            const batch = db.batch();
+            snapshot.docs.forEach(doc => {
+                batch.delete(doc.ref);
+            });
+            await batch.commit();
+            loadRSVPs();
+            loadRSVPStats(); // Add this line
+            populateDynamicContactList();
+        } catch (error) {
+            console.error(`Error deleting all for ${collectionName}:`, error);
+        }
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     // Check if already authenticated as admin
