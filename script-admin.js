@@ -1014,6 +1014,7 @@ async function initializeAdmin() {
     await loadEvents();
     await loadEventOptions();
     await loadRSVPStats(); // Add this line
+    await loadDietaryRestrictions()
     
     loadRSVPs();
     loadGuestListRequests();
@@ -1061,6 +1062,65 @@ async function deleteAllForEvent(collectionName) {
         } catch (error) {
             console.error(`Error deleting all for ${collectionName}:`, error);
         }
+    }
+}
+
+async function loadDietaryRestrictions() {
+    const dietaryContainer = document.getElementById('dietary-restrictions-container');
+    if (!dietaryContainer) return;
+    
+    try {
+        // Get all events
+        const eventsSnapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
+        
+        dietaryContainer.innerHTML = '';
+        
+        for (const eventDoc of eventsSnapshot.docs) {
+            const eventData = eventDoc.data();
+            
+            // Get RSVPs with dietary notes for this event
+            const rsvpSnapshot = await db.collection(eventData.collectionName)
+                .where('attending', 'in', ['Yes', 'Maybe'])
+                .get();
+            
+            const dietaryNotes = [];
+            rsvpSnapshot.forEach(doc => {
+                const rsvp = doc.data();
+                if (rsvp.notes && rsvp.notes.trim()) {
+                    dietaryNotes.push({
+                        name: rsvp.name || 'Unknown',
+                        notes: rsvp.notes.trim(),
+                        guests: rsvp.guests || 1
+                    });
+                }
+            });
+            
+            if (dietaryNotes.length > 0) {
+                const eventDiv = document.createElement('div');
+                eventDiv.className = 'dietary-event';
+                
+                let notesHTML = dietaryNotes.map(note => 
+                    `<div class="dietary-note">
+                        <strong>${note.name}</strong> (${note.guests} guest${note.guests > 1 ? 's' : ''}): ${note.notes}
+                    </div>`
+                ).join('');
+                
+                eventDiv.innerHTML = `
+                    <h4>${eventData.name} ${eventData.isActive ? '<span style="color: green;">(ACTIVE)</span>' : ''}</h4>
+                    ${notesHTML}
+                `;
+                
+                dietaryContainer.appendChild(eventDiv);
+            }
+        }
+        
+        if (dietaryContainer.innerHTML === '') {
+            dietaryContainer.innerHTML = '<p>No dietary restrictions or notes found.</p>';
+        }
+        
+    } catch (error) {
+        console.error('Error loading dietary restrictions:', error);
+        dietaryContainer.innerHTML = '<p style="color: red;">Error loading dietary information.</p>';
     }
 }
 

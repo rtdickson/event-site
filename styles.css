@@ -581,4 +581,25 @@ footer {
     color: #666;
 }
 
+.dietary-section {
+    margin-bottom: 40px;
+}
+
+.dietary-event {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+}
+
+.dietary-note {
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.dietary-note:last-child {
+    border-bottom: none;
+}
+
 /* Remove mobile styles since we're keeping it simple */

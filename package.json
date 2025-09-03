@@ -1,0 +1,25 @@
+{
+  "devDependencies": {
+    "tailwind": "^4.0.0",
+    "tailwindcss": "^4.1.12"
+  },
+  "name": "event-site",
+  "version": "1.0.0",
+  "description": "",
+  "main": "auth.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rtdickson/event-site.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/rtdickson/event-site/issues"
+  },
+  "homepage": "https://github.com/rtdickson/event-site#readme"
+}

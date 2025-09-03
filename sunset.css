@@ -1,0 +1,53 @@
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: #fff8f5;
+    color: #5d2c2c;
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+header {
+    background: linear-gradient(to right, #d84315, #ff7043);
+    color: white;
+    text-align: center;
+    padding: 1rem;
+}
+
+header .banner {
+    width: 100%;
+    max-height: 400px;
+    object-fit: cover;
+    border-bottom: 2px solid #d84315;
+}
+
+h2, h3 {
+    font-family: 'Playfair Display', serif;
+    color: #d84315;
+}
+
+button {
+    background-color: #ff7043;
+    color: white;
+    border: none;
+    padding: 0.75rem;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+button:hover {
+    background-color: #d84315;
+}
+
+th {
+    background-color: #ff7043;
+    color: white;
+}
+
+footer {
+    text-align: center;
+    padding: 1rem;
+    background-color: #d84315;
+    color: white;
+}
