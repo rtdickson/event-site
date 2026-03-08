@@ -9,6 +9,7 @@
     <!-- Firebase Scripts v10 -->
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-storage-compat.js"></script>
 
     <!-- Shared Firebase Config -->
     <script src="firebase-config.js"></script>
@@ -170,6 +171,14 @@
 
                                     <label for="event-date">Date & Time:</label>
                                     <input id="event-date" type="text" required />
+
+                                    <label for="event-image">Event Image:</label>
+                                    <div class="event-image-upload">
+                                        <input type="file" id="event-image" accept="image/*" />
+                                        <div id="event-image-preview" class="image-preview">
+                                            <span>No image selected (Bend in the River logo will be used)</span>
+                                        </div>
+                                    </div>
 
                                     <label for="event-description">Description:</label>
                                     <textarea id="event-description" rows="3"></textarea>

@@ -34,8 +34,9 @@ function handleEventChange() {
 async function initializeAdmin() {
     console.log('initializeAdmin called'); // Debug line
 
-    // Initialize theme picker immediately - doesn't depend on data loading
+    // Initialize theme picker and image preview immediately
     initializeThemePicker();
+    setupImagePreview();
 
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
@@ -170,6 +171,65 @@ async function loadEvents() {
     }
 }
 
+// Image resize and upload utilities
+const eventStorage = firebase.storage();
+
+function resizeImage(file, maxWidth, maxHeight) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                // Scale down proportionally
+                if (width > maxWidth || height > maxHeight) {
+                    const ratio = Math.min(maxWidth / width, maxHeight / height);
+                    width = Math.round(width * ratio);
+                    height = Math.round(height * ratio);
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(resolve, 'image/jpeg', 0.85);
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+async function uploadEventImage(file, eventName) {
+    // Resize to fit the event-img constraints (600px wide max, keeps aspect ratio)
+    const resizedBlob = await resizeImage(file, 600, 400);
+    const safeName = eventName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const ref = eventStorage.ref(`event-images/${safeName}_${Date.now()}.jpg`);
+    await ref.put(resizedBlob, { contentType: 'image/jpeg' });
+    return await ref.getDownloadURL();
+}
+
+// Preview selected image in the form
+function setupImagePreview() {
+    const input = document.getElementById('event-image');
+    if (!input) return;
+    input.addEventListener('change', () => {
+        const preview = document.getElementById('event-image-preview');
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                preview.innerHTML = `<img src="${e.target.result}" alt="Preview" style="max-width:200px;max-height:140px;border-radius:6px;object-fit:cover;">`;
+            };
+            reader.readAsDataURL(input.files[0]);
+        } else {
+            preview.innerHTML = '<span>No image selected (Bend in the River logo will be used)</span>';
+        }
+    });
+}
+
 async function saveEvent(eventData, eventId = null) {
     try {
         // If setting this event as active, deactivate all others first
@@ -214,9 +274,19 @@ async function editEvent(eventId) {
         document.getElementById('event-schedule').value = Array.isArray(data.schedule) ? data.schedule.join('\n') : '';
         document.getElementById('event-active').checked = data.isActive || false;
         
+        // Show existing event image in preview
+        const preview = document.getElementById('event-image-preview');
+        if (preview) {
+            if (data.imageUrl) {
+                preview.innerHTML = `<img src="${data.imageUrl}" alt="Current image" style="max-width:200px;max-height:140px;border-radius:6px;object-fit:cover;">`;
+            } else {
+                preview.innerHTML = '<span>No image (Bend in the River logo will be used)</span>';
+            }
+        }
+
         // Store the event ID for updating
         document.getElementById('event-form').setAttribute('data-edit-id', eventId);
-        
+
         // Change button text
         const submitButton = document.querySelector('#event-form button[type="submit"]');
         submitButton.textContent = 'Update Event';
@@ -263,6 +333,10 @@ function clearEventForm() {
     document.getElementById('event-form').removeAttribute('data-edit-id');
     document.querySelector('#event-form button[type="submit"]').textContent = 'Save Event';
     document.getElementById('event-message').textContent = '';
+    const preview = document.getElementById('event-image-preview');
+    if (preview) {
+        preview.innerHTML = '<span>No image selected (Bend in the River logo will be used)</span>';
+    }
 }
 
 async function loadEventOptions() {
@@ -1225,7 +1299,23 @@ if (eventForm) {
             collectionName: createCollectionName(eventName),
             isActive: document.getElementById('event-active').checked
         };
-        
+
+        // Handle image upload if a file was selected
+        const imageInput = document.getElementById('event-image');
+        if (imageInput && imageInput.files && imageInput.files[0]) {
+            try {
+                submitButton.textContent = 'Uploading image...';
+                eventData.imageUrl = await uploadEventImage(imageInput.files[0], eventName);
+            } catch (error) {
+                console.error('Error uploading image:', error);
+                document.getElementById('event-message').textContent = 'Error uploading image. Event not saved.';
+                document.getElementById('event-message').style.color = 'red';
+                submitButton.disabled = false;
+                submitButton.textContent = originalText;
+                return;
+            }
+        }
+
         const editId = eventForm.getAttribute('data-edit-id');
         const success = await saveEvent(eventData, editId);
         

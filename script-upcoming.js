@@ -55,7 +55,7 @@ async function loadUpcomingEvents() {
             }
             
             eventCard.innerHTML = `
-                <img src="images/event1.jpg" alt="${data.name}" class="event-img">
+                <img src="${data.imageUrl || 'images/event1.jpg'}" alt="${data.name}" class="event-img">
                 <div class="event-content">
                     <h3>${data.name}</h3>
                     <p><strong>Date & Time:</strong> ${data.date}</p>

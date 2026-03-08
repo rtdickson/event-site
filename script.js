@@ -40,7 +40,14 @@ async function loadActiveEvent() {
         eventDescEl.textContent = activeEventData.description || 'No description available';
         eventBringEl.textContent = activeEventData.whatToBring || 'Nothing specified';
         rsvpTitleEl.textContent = `${activeEventData.name} RSVP`;
-        
+
+        // Set event image (use uploaded image or fall back to default)
+        const eventImg = document.querySelector('.event-img');
+        if (eventImg && activeEventData.imageUrl) {
+            eventImg.src = activeEventData.imageUrl;
+            eventImg.alt = activeEventData.name;
+        }
+
         // Populate menu items
         const menuList = document.getElementById('event-menu');
         const menuSection = document.getElementById('menu-section');
