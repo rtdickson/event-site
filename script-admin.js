@@ -34,6 +34,17 @@ function handleEventChange() {
 async function initializeAdmin() {
     console.log('initializeAdmin called'); // Debug line
 
+    // Initialize theme picker immediately - doesn't depend on data loading
+    initializeThemePicker();
+
+    // Initialize forms now that they are visible
+    if (typeof window.initializeContactForm === 'function') {
+        window.initializeContactForm();
+    }
+    if (typeof window.initializeInviteForm === 'function') {
+        window.initializeInviteForm();
+    }
+
     try {
         // Load all data with proper sequencing - AWAIT each one
         await loadEvents();
@@ -44,10 +55,15 @@ async function initializeAdmin() {
     }
 
     try {
-        loadRSVPs(); // These can run async
-        loadGuestListRequests();
+        await loadRSVPs();
     } catch (error) {
-        console.error('Error loading RSVPs/requests:', error);
+        console.error('Error loading RSVPs:', error);
+    }
+
+    try {
+        await loadGuestListRequests();
+    } catch (error) {
+        console.error('Error loading guest list requests:', error);
     }
 
     // Set up initial dynamic content and event listener after everything loads
@@ -56,17 +72,6 @@ async function initializeAdmin() {
         setupEventChangeListener();
         handleEventChange();
     }, 1000); // Increased delay to 1 second
-
-    // Initialize forms now that they are visible
-    if (typeof window.initializeContactForm === 'function') {
-        window.initializeContactForm();
-    }
-    if (typeof window.initializeInviteForm === 'function') {
-        window.initializeInviteForm();
-    }
-
-    // Initialize theme picker
-    initializeThemePicker();
 }
 
 // Theme picker for admin page
