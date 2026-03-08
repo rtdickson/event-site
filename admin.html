@@ -5,17 +5,17 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Admin - Pine Grove Gatherings</title>
     <link href="styles.css" rel="stylesheet"/>
-    
+
     <!-- Firebase Scripts v10 -->
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
-    
+
     <!-- Shared Firebase Config -->
     <script src="firebase-config.js"></script>
     <script src="theme-loader.js"></script>
 
     <script src="auth.js"></script>
-    
+
     <!-- Application Scripts -->
     <script src="script-twilio.js"></script>
     <script src="script-admin.js"></script>
@@ -26,10 +26,10 @@
     <!-- Admin Password Prompt -->
     <div id="admin-password-prompt">
         <form id="admin-password-form">
-            <input 
-                id="admin-password-input" 
-                placeholder="Enter admin password" 
-                required 
+            <input
+                id="admin-password-input"
+                placeholder="Enter admin password"
+                required
                 type="password"
             />
             <button type="submit">Submit</button>
@@ -43,158 +43,201 @@
             <h1>Admin Dashboard</h1>
         </header>
 
-        <main>
-            <!-- Main Action Section -->
-            <section class="main-actions">
-                <div class="admin-flex-container">
-                    <!-- Send Invites -->
-                    <div class="admin-flex-item">
-                        <h2>Send Invites</h2>
-                        <form id="invite-form">
-                            <label for="event-select">Event:</label>
-                            <select id="event-select">
-                                <option value="">Loading events...</option>
-                            </select>
+        <div class="admin-layout">
+            <!-- Sidebar Navigation -->
+            <nav class="admin-sidebar">
+                <ul>
+                    <li><a href="#" class="sidebar-link active" data-panel="invites">Send Invites</a></li>
+                    <li><a href="#" class="sidebar-link" data-panel="rsvps">RSVPs</a></li>
+                    <li><a href="#" class="sidebar-link" data-panel="requests">Guest Requests</a></li>
+                    <li><a href="#" class="sidebar-link" data-panel="events">Event Manager</a></li>
+                    <li><a href="#" class="sidebar-link" data-panel="settings">Settings</a></li>
+                </ul>
+            </nav>
 
-                            <label for="phone-numbers">Phone Numbers (comma-separated):</label>
-                            <input 
-                                id="phone-numbers" 
-                                placeholder="+1XXXXXXXXXX,+1YYYYYYYYYY" 
-                                type="text"
-                            />
+            <!-- Main Content Area -->
+            <main class="admin-main">
 
-                            <label for="invite-message">Custom Message (optional):</label>
-                            <textarea id="invite-message" rows="6"></textarea>
+                <!-- Panel: Send Invites -->
+                <div class="admin-panel active" id="panel-invites">
+                    <section class="main-actions">
+                        <div class="admin-flex-container">
+                            <!-- Send Invites -->
+                            <div class="admin-flex-item">
+                                <h2>Send Invites</h2>
+                                <form id="invite-form">
+                                    <label for="event-select">Event:</label>
+                                    <select id="event-select">
+                                        <option value="">Loading events...</option>
+                                    </select>
 
-                            <button type="submit">Send Invites</button>
-                            <p id="invite-status-message"></p>
-                        </form>
-                    </div>
+                                    <label for="phone-numbers">Phone Numbers (comma-separated):</label>
+                                    <input
+                                        id="phone-numbers"
+                                        placeholder="+1XXXXXXXXXX,+1YYYYYYYYYY"
+                                        type="text"
+                                    />
 
-                    <!-- Quick Contact Selection -->
-                    <div class="admin-flex-item contact-selection">
-                        <h2>Quick Contact Selection</h2>
-                        <div id="dynamic-contact-list">
-                            Loading contacts...
-                        </div>
-                    </div>
+                                    <label for="invite-message">Custom Message (optional):</label>
+                                    <textarea id="invite-message" rows="6"></textarea>
 
-                    <!-- Add Contact Form -->
-                    <div class="admin-flex-item contact-form">
-                        <h2>Add Contact</h2>
-                        <form id="contact-form">
-                            <label for="contact-name">Name:</label>
-                            <input id="contact-name" type="text"/>
-
-                            <label for="contact-phone">Phone:</label>
-                            <input 
-                                id="contact-phone" 
-                                placeholder="+1XXXXXXXXXX" 
-                                type="text"
-                            />
-
-                            <button type="submit">Add Contact</button>
-                            <p id="contact-message"></p>
-                        </form>
-                    </div>
-                </div>
-            </section>
-
-            <!-- RSVP Statistics Section -->
-            <section class="rsvp-stats-section">
-                <h2>RSVP Statistics</h2>
-                <div id="rsvp-stats-container">
-                    Loading statistics...
-                </div>
-            </section>
-
-            <!-- RSVP Section -->
-            <section class="rsvp-section">
-                <h2>RSVPs</h2>
-                <div id="rsvp-groups"></div>
-            </section>
-            <!-- Dietary Restrictions Section -->
-            <section class="dietary-section">
-                <h2>Dietary Restrictions & Notes</h2>
-                <div id="dietary-restrictions-container">
-                    Loading dietary information...
-                </div>
-            </section>
-
-            <!-- Guest List Requests Section -->
-            <section class="requests-section">
-                <h2>Guest List Requests</h2>
-                <table id="request-table">
-                    <thead>
-                        <tr>
-                            <th>Phone</th>
-                            <th>Timestamp</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-            </section>
-
-            <!-- Theme Selector Section -->
-            <section class="theme-section">
-                <h2>Site Theme</h2>
-                <div id="theme-picker" class="theme-picker">
-                    <!-- Theme swatches will be generated by JS -->
-                </div>
-                <p id="theme-message"></p>
-            </section>
-
-            <!-- Event Manager Section - Moved to Bottom -->
-            <section class="event-manager-section">
-                <h2>Event Manager</h2>
-                
-                <div class="event-manager-container">
-                    <!-- Create/Edit Event Form -->
-                    <div class="event-form-container">
-                        <h3>Create/Edit Event</h3>
-                        <form id="event-form">
-                            <label for="event-name">Event Name:</label>
-                            <input id="event-name" type="text" required />
-
-                            <label for="event-date">Date & Time:</label>
-                            <input id="event-date" type="text" required />
-
-                            <label for="event-description">Description:</label>
-                            <textarea id="event-description" rows="3"></textarea>
-
-                            <label for="event-menu">Menu Items (one per line):</label>
-                            <textarea id="event-menu" rows="4"></textarea>
-
-                            <label for="event-bring">What to Bring:</label>
-                            <input id="event-bring" type="text" />
-
-                            <label for="event-schedule">Schedule Items (one per line):</label>
-                            <textarea id="event-schedule" rows="4"></textarea>
-
-                            <div class="event-active-checkbox">
-                                <label>
-                                    <input type="checkbox" id="event-active" />
-                                    Make this the active event (shown to guests)
-                                </label>
+                                    <button type="submit">Send Invites</button>
+                                    <p id="invite-status-message"></p>
+                                </form>
                             </div>
 
-                            <button type="submit">Save Event</button>
-                            <button type="button" onclick="clearEventForm()">Clear Form</button>
-                            <p id="event-message"></p>
-                        </form>
-                    </div>
+                            <!-- Quick Contact Selection -->
+                            <div class="admin-flex-item contact-selection">
+                                <h2>Quick Contact Selection</h2>
+                                <div id="dynamic-contact-list">
+                                    Loading contacts...
+                                </div>
+                            </div>
 
-                    <!-- Events List -->
-                    <div class="events-list-container">
-                        <h3>Existing Events</h3>
-                        <div id="events-list">
-                            Loading events...
+                            <!-- Add Contact Form -->
+                            <div class="admin-flex-item contact-form">
+                                <h2>Add Contact</h2>
+                                <form id="contact-form">
+                                    <label for="contact-name">Name:</label>
+                                    <input id="contact-name" type="text"/>
+
+                                    <label for="contact-phone">Phone:</label>
+                                    <input
+                                        id="contact-phone"
+                                        placeholder="+1XXXXXXXXXX"
+                                        type="text"
+                                    />
+
+                                    <button type="submit">Add Contact</button>
+                                    <p id="contact-message"></p>
+                                </form>
+                            </div>
                         </div>
-                    </div>
+                    </section>
                 </div>
-            </section>
-        </main>
+
+                <!-- Panel: RSVPs -->
+                <div class="admin-panel" id="panel-rsvps">
+                    <section class="rsvp-stats-section">
+                        <h2>RSVP Statistics</h2>
+                        <div id="rsvp-stats-container">
+                            Loading statistics...
+                        </div>
+                    </section>
+
+                    <section class="rsvp-section">
+                        <h2>RSVPs</h2>
+                        <div id="rsvp-groups"></div>
+                    </section>
+
+                    <section class="dietary-section">
+                        <h2>Dietary Restrictions & Notes</h2>
+                        <div id="dietary-restrictions-container">
+                            Loading dietary information...
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Panel: Guest Requests -->
+                <div class="admin-panel" id="panel-requests">
+                    <section class="requests-section">
+                        <h2>Guest List Requests</h2>
+                        <table id="request-table">
+                            <thead>
+                                <tr>
+                                    <th>Phone</th>
+                                    <th>Timestamp</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </section>
+                </div>
+
+                <!-- Panel: Event Manager -->
+                <div class="admin-panel" id="panel-events">
+                    <section class="event-manager-section">
+                        <h2>Event Manager</h2>
+
+                        <div class="event-manager-container">
+                            <!-- Create/Edit Event Form -->
+                            <div class="event-form-container">
+                                <h3>Create/Edit Event</h3>
+                                <form id="event-form">
+                                    <label for="event-name">Event Name:</label>
+                                    <input id="event-name" type="text" required />
+
+                                    <label for="event-date">Date & Time:</label>
+                                    <input id="event-date" type="text" required />
+
+                                    <label for="event-description">Description:</label>
+                                    <textarea id="event-description" rows="3"></textarea>
+
+                                    <label for="event-menu">Menu Items (one per line):</label>
+                                    <textarea id="event-menu" rows="4"></textarea>
+
+                                    <label for="event-bring">What to Bring:</label>
+                                    <input id="event-bring" type="text" />
+
+                                    <label for="event-schedule">Schedule Items (one per line):</label>
+                                    <textarea id="event-schedule" rows="4"></textarea>
+
+                                    <div class="event-active-checkbox">
+                                        <label>
+                                            <input type="checkbox" id="event-active" />
+                                            Make this the active event (shown to guests)
+                                        </label>
+                                    </div>
+
+                                    <button type="submit">Save Event</button>
+                                    <button type="button" onclick="clearEventForm()">Clear Form</button>
+                                    <p id="event-message"></p>
+                                </form>
+                            </div>
+
+                            <!-- Events List -->
+                            <div class="events-list-container">
+                                <h3>Existing Events</h3>
+                                <div id="events-list">
+                                    Loading events...
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Panel: Settings -->
+                <div class="admin-panel" id="panel-settings">
+                    <section class="theme-section">
+                        <h2>Site Theme</h2>
+                        <div id="theme-picker" class="theme-picker">
+                            <!-- Theme swatches will be generated by JS -->
+                        </div>
+                        <p id="theme-message"></p>
+                    </section>
+                </div>
+
+            </main>
+        </div>
     </div>
+
+    <script>
+    // Sidebar navigation
+    document.querySelectorAll('.sidebar-link').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const panelId = link.getAttribute('data-panel');
+
+            // Update active sidebar link
+            document.querySelectorAll('.sidebar-link').forEach(l => l.classList.remove('active'));
+            link.classList.add('active');
+
+            // Show the selected panel, hide others
+            document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById('panel-' + panelId).classList.add('active');
+        });
+    });
+    </script>
 </body>
 </html>
