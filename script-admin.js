@@ -34,9 +34,10 @@ function handleEventChange() {
 async function initializeAdmin() {
     console.log('initializeAdmin called'); // Debug line
 
-    // Initialize theme picker and image preview immediately
+    // Initialize UI components immediately
     initializeThemePicker();
     setupImagePreview();
+    setupDatePreview();
 
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
@@ -171,6 +172,40 @@ async function loadEvents() {
     }
 }
 
+// Date formatting utilities
+function formatDateForDisplay(dateTimeLocalValue) {
+    if (!dateTimeLocalValue) return '';
+    const date = new Date(dateTimeLocalValue);
+    if (isNaN(date.getTime())) return dateTimeLocalValue;
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+    });
+}
+
+function setupDatePreview() {
+    const dateInput = document.getElementById('event-date');
+    const preview = document.getElementById('event-date-preview');
+    if (!dateInput || !preview) return;
+    dateInput.addEventListener('input', () => {
+        preview.textContent = dateInput.value ? formatDateForDisplay(dateInput.value) : '';
+    });
+}
+
+// Convert a display date string back to datetime-local format (best effort)
+function displayDateToInputValue(displayDate) {
+    if (!displayDate) return '';
+    const date = new Date(displayDate);
+    if (isNaN(date.getTime())) return '';
+    // datetime-local expects YYYY-MM-DDTHH:MM
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 // Image resize and upload utilities
 const eventStorage = firebase.storage();
 
@@ -267,7 +302,14 @@ async function editEvent(eventId) {
         
         // Populate form with event data
         document.getElementById('event-name').value = data.name || '';
-        document.getElementById('event-date').value = data.date || '';
+        // Use raw date value for the datetime-local input, fall back to parsing the display string
+        const dateInput = document.getElementById('event-date');
+        dateInput.value = data.dateRaw || displayDateToInputValue(data.date) || '';
+        // Update the preview
+        const datePreview = document.getElementById('event-date-preview');
+        if (datePreview) {
+            datePreview.textContent = dateInput.value ? formatDateForDisplay(dateInput.value) : (data.date || '');
+        }
         document.getElementById('event-description').value = data.description || '';
         document.getElementById('event-menu').value = Array.isArray(data.menu) ? data.menu.join('\n') : '';
         document.getElementById('event-bring').value = data.whatToBring || '';
@@ -1289,9 +1331,11 @@ if (eventForm) {
         submitButton.textContent = 'Saving...';
         
         const eventName = document.getElementById('event-name').value;
+        const dateRaw = document.getElementById('event-date').value;
         const eventData = {
             name: eventName,
-            date: document.getElementById('event-date').value,
+            date: formatDateForDisplay(dateRaw) || dateRaw,
+            dateRaw: dateRaw,
             description: document.getElementById('event-description').value,
             menu: document.getElementById('event-menu').value.split('\n').filter(item => item.trim()),
             whatToBring: document.getElementById('event-bring').value,

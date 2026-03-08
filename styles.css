@@ -491,6 +491,13 @@ footer {
     background-color: #d32f2f;
 }
 
+/* Date preview */
+.date-preview {
+    color: var(--primary-dark);
+    font-style: italic;
+    font-size: 0.9rem;
+}
+
 /* Event image upload */
 .event-image-upload {
     display: flex;
