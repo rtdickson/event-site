@@ -16,5 +16,8 @@ service cloud.firestore {
     match /rsvps-halloween-party/{document=**} {
       allow read, write: if true;
     }
+    match /settings/{document=**} {
+      allow read, write: if true;
+    }
   }
 }

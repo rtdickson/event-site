@@ -33,14 +33,22 @@ function handleEventChange() {
 // Initialize admin functionality - called by auth system
 async function initializeAdmin() {
     console.log('initializeAdmin called'); // Debug line
-    
-    // Load all data with proper sequencing - AWAIT each one
-    await loadEvents();
-    await loadEventOptions(); // Make sure this completes before moving on
-    console.log('loadEventOptions completed'); // Debug line
-    
-    loadRSVPs(); // These can run async
-    loadGuestListRequests();
+
+    try {
+        // Load all data with proper sequencing - AWAIT each one
+        await loadEvents();
+        await loadEventOptions(); // Make sure this completes before moving on
+        console.log('loadEventOptions completed'); // Debug line
+    } catch (error) {
+        console.error('Error loading events/options:', error);
+    }
+
+    try {
+        loadRSVPs(); // These can run async
+        loadGuestListRequests();
+    } catch (error) {
+        console.error('Error loading RSVPs/requests:', error);
+    }
 
     // Set up initial dynamic content and event listener after everything loads
     setTimeout(() => {
@@ -48,7 +56,7 @@ async function initializeAdmin() {
         setupEventChangeListener();
         handleEventChange();
     }, 1000); // Increased delay to 1 second
-    
+
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
         window.initializeContactForm();
@@ -56,6 +64,53 @@ async function initializeAdmin() {
     if (typeof window.initializeInviteForm === 'function') {
         window.initializeInviteForm();
     }
+
+    // Initialize theme picker
+    initializeThemePicker();
+}
+
+// Theme picker for admin page
+function initializeThemePicker() {
+    const picker = document.getElementById('theme-picker');
+    console.log('initializeThemePicker called, picker:', picker, 'themes:', typeof themes);
+    if (!picker) return;
+    if (typeof themes === 'undefined') {
+        console.error('themes not defined - theme-loader.js may not have loaded');
+        return;
+    }
+
+    const currentTheme = localStorage.getItem('site_theme') || 'default';
+    picker.innerHTML = '';
+
+    Object.keys(themes).forEach(key => {
+        const theme = themes[key];
+        const swatch = document.createElement('div');
+        swatch.className = 'theme-swatch' + (key === currentTheme ? ' active' : '');
+        swatch.innerHTML = `
+            <div class="theme-swatch-colors">
+                <span style="background:${theme['--primary-dark']}"></span>
+                <span style="background:${theme['--primary-medium']}"></span>
+                <span style="background:${theme['--background']}"></span>
+            </div>
+            <div class="theme-swatch-label">${theme.label}</div>
+        `;
+        swatch.addEventListener('click', () => {
+            // Update active state
+            picker.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+            swatch.classList.add('active');
+
+            // Save and apply theme
+            saveTheme(key);
+
+            const msg = document.getElementById('theme-message');
+            if (msg) {
+                msg.textContent = `Theme changed to "${theme.label}"`;
+                msg.style.color = 'green';
+                setTimeout(() => { msg.textContent = ''; }, 3000);
+            }
+        });
+        picker.appendChild(swatch);
+    });
 }
 
 // Event management functions

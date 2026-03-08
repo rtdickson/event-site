@@ -602,4 +602,56 @@ footer {
     border-bottom: none;
 }
 
+/* Theme picker styles */
+.theme-section {
+    margin-bottom: 40px;
+}
+
+.theme-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.theme-swatch {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: pointer;
+    border: 3px solid transparent;
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: white;
+    transition: border-color 0.2s, transform 0.2s;
+    min-width: 90px;
+}
+
+.theme-swatch:hover {
+    transform: scale(1.05);
+}
+
+.theme-swatch.active {
+    border-color: #333;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.theme-swatch-colors {
+    display: flex;
+    width: 60px;
+    height: 30px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.theme-swatch-colors span {
+    flex: 1;
+}
+
+.theme-swatch-label {
+    font-size: 11px;
+    color: #555;
+    text-align: center;
+}
+
 /* Remove mobile styles since we're keeping it simple */
