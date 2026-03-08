@@ -1,8 +1,10 @@
 {
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "functions": [
     {
       "source": "functions",
-      "rules": "firestore.rules",
       "codebase": "default",
       "ignore": [
         "node_modules",

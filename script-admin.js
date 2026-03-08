@@ -55,6 +55,18 @@ async function initializeAdmin() {
     }
 
     try {
+        await loadRSVPStats();
+    } catch (error) {
+        console.error('Error loading RSVP stats:', error);
+    }
+
+    try {
+        await loadDietaryRestrictions();
+    } catch (error) {
+        console.error('Error loading dietary restrictions:', error);
+    }
+
+    try {
         await loadRSVPs();
     } catch (error) {
         console.error('Error loading RSVPs:', error);
@@ -1067,31 +1079,7 @@ async function loadRSVPStats() {
     }
 }
 
-// Update the initializeAdmin function to include stats loading
-async function initializeAdmin() {
-    console.log('initializeAdmin called');
-    
-    await loadEvents();
-    await loadEventOptions();
-    await loadRSVPStats(); // Add this line
-    await loadDietaryRestrictions()
-    
-    loadRSVPs();
-    loadGuestListRequests();
-
-    setTimeout(() => {
-        console.log('Setting up event listeners');
-        setupEventChangeListener();
-        handleEventChange();
-    }, 1000);
-    
-    if (typeof window.initializeContactForm === 'function') {
-        window.initializeContactForm();
-    }
-    if (typeof window.initializeInviteForm === 'function') {
-        window.initializeInviteForm();
-    }
-}
+// Stats loading is handled in the primary initializeAdmin function above
 
 // Also update loadRSVPs to refresh stats when RSVPs change
 async function deleteRSVP(id, collectionName) {
