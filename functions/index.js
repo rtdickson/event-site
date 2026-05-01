@@ -122,6 +122,20 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
                 return handleMuteToggle(From, lower === 'mute', res);
             }
 
+            // PICKS — anyone can request their own slip back from the active pool
+            if (lower === 'picks') {
+                const activeForPicks = await db.collection('events').where('isActive', '==', true).limit(1).get();
+                if (!activeForPicks.empty && activeForPicks.docs[0].data().type === 'pool') {
+                    return handleMyPicks(From, activeForPicks.docs[0].data(), res);
+                }
+                await twilioClient.messages.create({
+                    body: 'No active pool event right now.',
+                    from: process.env.TWILIO_PHONE_NUMBER,
+                    to: From
+                });
+                return res.status(200).send('<Response></Response>');
+            }
+
             // STATS — for pool events, anyone can request (gathering STATS stays admin-only below)
             if (lower === 'stats') {
                 const activeForStats = await db.collection('events').where('isActive', '==', true).limit(1).get();
@@ -249,6 +263,107 @@ async function handleRegularRSVP(From, Body) {
     });
     
     console.log(`SMS RSVP recorded from: ${From} for event: ${eventName}`);
+}
+
+// PICKS: return the sender's own slip from the active pool event.
+async function handleMyPicks(From, activeEvent, res) {
+    try {
+        const collection = activeEvent.collectionName;
+        const config = activeEvent.poolConfig || {};
+        const contestants = config.contestants || [];
+        const cById = {};
+        contestants.forEach(c => { cById[Number(c.id)] = c; });
+
+        // Forgiving phone match
+        const fromNorm = String(From).replace(/\D/g, '').slice(-10);
+        const snap = await db.collection(collection).get();
+        let entry = null;
+        snap.forEach(doc => {
+            if (entry) return;
+            const d = doc.data();
+            const norm = String(d.phone || '').replace(/\D/g, '').slice(-10);
+            if (norm === fromNorm) entry = d;
+        });
+
+        if (!entry) {
+            await twilioClient.messages.create({
+                body: `No picks found for you in ${activeEvent.name}. Make picks at https://75pinegrove.com (password: FriendsOnly2025) or text PICK <#> for a quick winner pick.`,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+
+        const picks = entry.picks || {};
+        const locks = entry.locks || [];
+        const questions = config.questions || [];
+
+        const formatPick = (q, v) => {
+            if (Array.isArray(v)) {
+                return v.filter(x => x != null).map(id => {
+                    const c = cById[Number(id)];
+                    return c ? `#${c.id} ${c.name}` : `#${id}`;
+                }).join('-');
+            }
+            if (q.kind === 'pickContestant' || q.kind === 'pickLongshot') {
+                const c = cById[Number(v)];
+                return c ? `#${c.id} ${c.name}` : `#${v}`;
+            }
+            return String(v);
+        };
+
+        const lines = [];
+        questions.forEach(q => {
+            const v = picks[q.id];
+            if (v === null || v === undefined || v === '') return;
+            if (Array.isArray(v) && !v.some(x => x != null && x !== '')) return;
+            const lock = locks.includes(q.id) ? ' 🔒' : '';
+            // Short label per question for SMS
+            const label = q.id === 'win' ? 'Win'
+                : q.id === 'place' ? '2nd'
+                : q.id === 'show' ? '3rd'
+                : q.id === 'tri' ? 'Tri'
+                : q.id === 'box3' ? 'Box'
+                : q.id === 'longshot' ? 'Longshot'
+                : q.id === 'time' ? 'Time'
+                : q.id === 'fav' ? 'Fav top-3'
+                : q.label || q.id;
+            lines.push(`${label}${lock}: ${formatPick(q, v)}`);
+        });
+
+        if (lines.length === 0) {
+            await twilioClient.messages.create({
+                body: `Your slip for ${activeEvent.name} is empty. Make picks at https://75pinegrove.com.`,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+
+        const max = PoolConfig.maxPossiblePayoff(config, entry, contestants);
+        let body = `Your picks for ${activeEvent.name}:\n` + lines.join('\n');
+        if (locks.length >= 2) {
+            body += `\n\n${locks.length}-leg parlay → bonus if all hit`;
+        }
+        body += `\nPotential purse: $${max.toLocaleString()}`;
+
+        await twilioClient.messages.create({
+            body,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: From
+        });
+        return res.status(200).send('<Response></Response>');
+    } catch (err) {
+        console.error('handleMyPicks error:', err);
+        try {
+            await twilioClient.messages.create({
+                body: 'PICKS hit an error. Try again or visit https://75pinegrove.com.',
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+        } catch (_) {}
+        return res.status(200).send('<Response></Response>');
+    }
 }
 
 // Pool STATS: leaderboard by potential purse + likeliest/longest shot.
@@ -721,7 +836,7 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
     // Help / status text
     if (responseText === 'help' || responseText === '') {
         await twilioClient.messages.create({
-            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nSTATS - leaderboard & odds\nSAY <msg> - trash talk to all entrants\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
+            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nPICKS - your slip\nSTATS - leaderboard & odds\nSAY <msg> - trash talk to all entrants\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: From
         });
