@@ -122,7 +122,84 @@
         renderEntries();
         renderResultsForm();
         renderStandings();
+        renderInsights();
         renderBroadcast();
+    }
+
+    async function renderInsights() {
+        const container = document.getElementById('pool-insights-list');
+        if (!container || !currentPoolEvent) return;
+        try {
+            const snap = await db.collection(currentPoolEvent.collectionName).get();
+            if (snap.empty) {
+                container.innerHTML = '<p class="pool-admin-help">No entries yet.</p>';
+                return;
+            }
+            const PC = window.PoolConfig;
+            const config = currentPoolEvent.poolConfig;
+            const contestants = config.contestants || [];
+
+            const enriched = snap.docs.map(doc => {
+                const d = doc.data();
+                return {
+                    name: d.name || 'Unknown',
+                    phone: d.phone,
+                    picks: d.picks || {},
+                    locks: d.locks || [],
+                    max: PC.maxPossiblePayoff(config, d, contestants),
+                    prob: PC.slipProbability(d, config, contestants)
+                };
+            }).filter(e => e.max > 0);
+
+            if (enriched.length === 0) {
+                container.innerHTML = '<p class="pool-admin-help">Entries exist but no picks made yet.</p>';
+                return;
+            }
+
+            // Compute fun stats
+            const byPurse = enriched.slice().sort((a, b) => b.max - a.max);
+            const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
+            const total = enriched.reduce((s, e) => s + e.max, 0);
+            const avg = Math.round(total / enriched.length);
+            const longshot = byProb[byProb.length - 1];
+            const favorite = byProb[0];
+            const biggest = byPurse[0];
+            const smallest = byPurse[byPurse.length - 1];
+            const parlayCount = enriched.filter(e => e.locks.length >= 2).length;
+
+            const lines = [
+                `📊 ${enriched.length} ${enriched.length === 1 ? 'player' : 'players'} in. Combined potential purse: $${total.toLocaleString()}.`,
+                `🏆 Biggest possible payday: ${biggest.name} could win $${biggest.max.toLocaleString()} (odds ${PC.formatOddsAgainst(biggest.prob)} against perfect slip).`,
+                `🎯 Most likely to hit their slip: ${favorite.name} at ${PC.formatOddsAgainst(favorite.prob)} — playing it relatively safe.`,
+                `🎲 Longest shot in the pool: ${longshot.name} needs ${PC.formatOddsAgainst(longshot.prob)} luck. Potential purse: $${longshot.max.toLocaleString()}.`,
+            ];
+            if (parlayCount > 0) {
+                lines.push(`🔒 ${parlayCount} ${parlayCount === 1 ? 'player' : 'players'} locked in a parlay bonus.`);
+            }
+            lines.push(`💰 Average potential purse: $${avg.toLocaleString()}.`);
+
+            container.innerHTML = '<ul class="pool-insights">'
+                + lines.map(line =>
+                    `<li class="pool-insight-line" title="Click to copy">${escapeHtml(line)}</li>`
+                ).join('')
+                + '</ul>';
+
+            container.querySelectorAll('.pool-insight-line').forEach(li => {
+                li.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(li.textContent);
+                        const orig = li.style.background;
+                        li.style.background = '#d4edda';
+                        setTimeout(() => { li.style.background = orig; }, 600);
+                    } catch (e) {
+                        console.warn('Clipboard write failed:', e);
+                    }
+                });
+            });
+        } catch (err) {
+            console.error('Error rendering insights:', err);
+            container.innerHTML = '<p style="color:red;">Error loading insights.</p>';
+        }
     }
 
     function renderBroadcast() {

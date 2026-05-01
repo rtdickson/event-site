@@ -84,7 +84,7 @@
                         <div id="pool-questions"></div>
 
                         <div class="pool-summary">
-                            <div class="pool-max">Max possible: <strong id="pool-max-amount">$0</strong></div>
+                            <div class="pool-max">Potential purse: <strong id="pool-max-amount">$0</strong></div>
                         </div>
 
                         <button type="submit" id="pool-submit" class="pool-primary-btn">Submit picks</button>
@@ -174,20 +174,27 @@
                 const displayName = nameForPhone(data.phone, data.name);
                 const score = hasResults ? window.PoolConfig.scoreSlip(config, data, contestants) : null;
                 const max = hasResults ? null : window.PoolConfig.maxPossiblePayoff(config, data, contestants);
-                return { data, displayName, score, max };
+                const slipProb = hasResults ? null : window.PoolConfig.slipProbability(data, config, contestants);
+                return { data, displayName, score, max, slipProb };
             });
-            // Sort by bankroll descending if results, else by max descending (just for visual interest)
+            // Sort by bankroll descending if results, else by max descending
             ranked.sort((a, b) => {
                 const av = a.score ? a.score.bankroll : a.max;
                 const bv = b.score ? b.score.bankroll : b.max;
                 return (bv || 0) - (av || 0);
             });
 
-            const rows = ranked.map(({ data, displayName, score, max }, i) => {
+            // Total potential purse across all entries (pre-results only)
+            const totalPurse = hasResults ? null : ranked.reduce((s, r) => s + (r.max || 0), 0);
+
+            const rows = ranked.map(({ data, displayName, score, max, slipProb }, i) => {
                 const hasLocks = Array.isArray(data.locks) && data.locks.length >= 2;
+                const oddsStr = (!hasResults && slipProb)
+                    ? `<div class="pool-entry-odds">odds ${window.PoolConfig.formatOddsAgainst(slipProb)}</div>`
+                    : '';
                 const amountStr = hasResults
                     ? `<strong>$${score.bankroll.toLocaleString()}</strong>`
-                    : `<span class="pool-max-cell">$${max.toLocaleString()}</span>`;
+                    : `<span class="pool-max-cell">$${max.toLocaleString()}</span>${oddsStr}`;
                 const detail = renderEntryDetail(data, config, contestantsById, score);
                 const rankBadge = hasResults && i < 3 ? `<span class="pool-rank-badge rank-${i+1}">${['🥇','🥈','🥉'][i]}</span>` : '';
                 return `
@@ -202,16 +209,20 @@
                 `;
             }).join('');
 
-            const headerLabel = hasResults ? 'Bankroll' : 'Max possible';
+            const headerLabel = hasResults ? 'Bankroll' : 'Potential purse';
+            const totalLine = (!hasResults && totalPurse > 0)
+                ? `<div class="pool-total-purse">Combined potential purse across ${ranked.length} ${ranked.length === 1 ? 'player' : 'players'}: <strong>$${totalPurse.toLocaleString()}</strong></div>`
+                : '';
 
             container.innerHTML = `
                 <h3 class="pool-entries-heading">${hasResults ? 'Standings' : 'Entries so far'} (${snap.size})</h3>
+                ${totalLine}
                 <div class="pool-entries-header-row">
                     <span>Name</span>
                     <span>${headerLabel}</span>
                 </div>
                 <div class="pool-entries-list">${rows}</div>
-                ${hasResults ? '' : '<p class="pool-fineprint" style="margin-top:8px;">Tap a name to see their picks. Payoffs assume each pick hits.</p>'}
+                ${hasResults ? '' : '<p class="pool-fineprint" style="margin-top:8px;">Tap a name to see their picks. Potential purse = what each player would win if every pick on their slip hits. Odds are rough — derived from morning-line probabilities.</p>'}
             `;
         } catch (err) {
             console.error('Error loading entries:', err);

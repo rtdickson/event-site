@@ -3,3 +3,4 @@ archive/
 git 
 /functions/*
 !/functions/index.js
+!/functions/pool-config.js

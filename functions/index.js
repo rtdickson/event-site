@@ -3,6 +3,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 const twilio = require('twilio');
 const cors = require('cors');
+const PoolConfig = require('./pool-config.js');
 
 const corsOptions = {
     origin: ['https://75pinegrove.com', 'http://localhost:8080'],
@@ -119,6 +120,15 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
             // MUTE / UNMUTE — per-event opt-out (active event only)
             if (lower === 'mute' || lower === 'unmute') {
                 return handleMuteToggle(From, lower === 'mute', res);
+            }
+
+            // STATS — for pool events, anyone can request (gathering STATS stays admin-only below)
+            if (lower === 'stats') {
+                const activeForStats = await db.collection('events').where('isActive', '==', true).limit(1).get();
+                if (!activeForStats.empty && activeForStats.docs[0].data().type === 'pool') {
+                    return handlePoolStats(From, activeForStats.docs[0].data(), res);
+                }
+                // else fall through to admin handler below
             }
 
             // JULEP — recipe (theme command, works for anyone)
@@ -241,6 +251,97 @@ async function handleRegularRSVP(From, Body) {
     console.log(`SMS RSVP recorded from: ${From} for event: ${eventName}`);
 }
 
+// Pool STATS: leaderboard by potential purse + likeliest/longest shot.
+// Available to anyone (not admin-only) when active event is a pool.
+async function handlePoolStats(From, activeEvent, res) {
+    try {
+        const collection = activeEvent.collectionName;
+        if (!collection) {
+            await twilioClient.messages.create({
+                body: 'No entries collection found.',
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+        const config = activeEvent.poolConfig || {};
+        const contestants = config.contestants || [];
+        const snap = await db.collection(collection).get();
+        if (snap.empty) {
+            await twilioClient.messages.create({
+                body: `${activeEvent.name}: no entries yet.`,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+
+        // Look up names from contacts (forgiving phone match)
+        const contactsSnap = await db.collection('contacts').get();
+        const contactsByNorm = {};
+        contactsSnap.forEach(d => {
+            const data = d.data();
+            if (!data.phone) return;
+            const n = String(data.phone).replace(/\D/g, '').slice(-10);
+            contactsByNorm[n] = data.name;
+        });
+        const nameFor = (entry) => {
+            const n = String(entry.phone || '').replace(/\D/g, '').slice(-10);
+            return contactsByNorm[n] || entry.name || 'Unknown';
+        };
+
+        const enriched = snap.docs.map(doc => {
+            const d = doc.data();
+            return {
+                name: nameFor(d),
+                max: PoolConfig.maxPossiblePayoff(config, d, contestants),
+                prob: PoolConfig.slipProbability(d, config, contestants)
+            };
+        }).filter(e => e.max > 0);
+
+        if (enriched.length === 0) {
+            await twilioClient.messages.create({
+                body: `${activeEvent.name}: no picks made yet.`,
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+
+        const byPurse = enriched.slice().sort((a, b) => b.max - a.max);
+        const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
+        const total = enriched.reduce((s, e) => s + e.max, 0);
+        const topN = Math.min(5, byPurse.length);
+
+        let body = `${activeEvent.name} (${enriched.length} ${enriched.length === 1 ? 'player' : 'players'})\n`;
+        body += `Combined potential: $${total.toLocaleString()}\n\n`;
+        body += `Top potential purses:\n`;
+        for (let i = 0; i < topN; i++) {
+            const e = byPurse[i];
+            body += `${i+1}. ${e.name}: $${e.max.toLocaleString()} (${PoolConfig.formatOddsAgainst(e.prob)})\n`;
+        }
+        body += `\nMost likely: ${byProb[0].name} (${PoolConfig.formatOddsAgainst(byProb[0].prob)})\n`;
+        body += `Longest shot: ${byProb[byProb.length-1].name} (${PoolConfig.formatOddsAgainst(byProb[byProb.length-1].prob)})`;
+
+        await twilioClient.messages.create({
+            body,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: From
+        });
+        return res.status(200).send('<Response></Response>');
+    } catch (err) {
+        console.error('handlePoolStats error:', err);
+        try {
+            await twilioClient.messages.create({
+                body: 'STATS hit an error. Try again.',
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+        } catch (_) {}
+        return res.status(200).send('<Response></Response>');
+    }
+}
+
 // Phone normalization: strip non-digits, take last 10
 function normalizePhone(p) {
     if (!p) return '';
@@ -330,8 +431,10 @@ async function handleMuteToggle(From, mute, res) {
 // Sender's name from contacts collection (falls back to phone last 4).
 // Excludes the sender. Reply with delivery count.
 async function handleTrashTalk(From, Body, res) {
+    console.log('SAY received from', From, 'body:', JSON.stringify(Body));
     try {
         const message = Body.replace(/^say\s+/i, '').trim();
+        console.log('SAY message extracted:', JSON.stringify(message));
         if (!message) {
             await twilioClient.messages.create({
                 body: 'SAY needs a message. Try: SAY this trifecta is going to crush you',
@@ -388,6 +491,7 @@ async function handleTrashTalk(From, Body, res) {
             if (isMuted(activeEvent, p)) return; // skip muted
             phones.add(p);
         });
+        console.log('SAY targets (raw phones):', Array.from(phones));
 
         if (phones.size === 0) {
             await twilioClient.messages.create({
@@ -617,7 +721,7 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
     // Help / status text
     if (responseText === 'help' || responseText === '') {
         await twilioClient.messages.create({
-            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nSAY <msg> - trash talk to all entrants\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
+            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nSTATS - leaderboard & odds\nSAY <msg> - trash talk to all entrants\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: From
         });
