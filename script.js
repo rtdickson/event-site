@@ -8,19 +8,36 @@ let activeEventData = null;
 
 async function loadActiveEvent() {
     try {
-        console.log('Loading active event...');
-        const snapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
-        
-        if (snapshot.empty) {
-            console.log('No active event found');
-            document.getElementById('event-loading').style.display = 'none';
-            document.getElementById('no-active-event').style.display = 'block';
-            return;
+        // Prefer ?id=XXX from URL (event detail page); fall back to active event for legacy callers.
+        const params = new URLSearchParams(window.location.search);
+        const requestedId = params.get('id');
+
+        let eventDoc;
+        if (requestedId) {
+            console.log('Loading event by id:', requestedId);
+            const docRef = await db.collection('events').doc(requestedId).get();
+            if (!docRef.exists) {
+                console.log('Event not found:', requestedId);
+                document.getElementById('event-loading').style.display = 'none';
+                document.getElementById('no-active-event').style.display = 'block';
+                return;
+            }
+            eventDoc = docRef;
+        } else {
+            console.log('Loading active event...');
+            const snapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
+            if (snapshot.empty) {
+                console.log('No active event found');
+                document.getElementById('event-loading').style.display = 'none';
+                document.getElementById('no-active-event').style.display = 'block';
+                return;
+            }
+            eventDoc = snapshot.docs[0];
         }
-        
-        const eventDoc = snapshot.docs[0];
+
         activeEventData = eventDoc.data();
-        console.log('Active event data:', activeEventData);
+        activeEventData._id = eventDoc.id;
+        console.log('Event data:', activeEventData);
         
         // Check if all required elements exist before setting content
         const eventNameEl = document.getElementById('event-name');
@@ -43,8 +60,12 @@ async function loadActiveEvent() {
 
         // Set event image (use uploaded image or fall back to default)
         const eventImg = document.querySelector('.event-img');
-        if (eventImg && activeEventData.imageUrl) {
-            eventImg.src = activeEventData.imageUrl;
+        if (eventImg) {
+            if (activeEventData.imageUrl) {
+                eventImg.src = activeEventData.imageUrl;
+            } else if (activeEventData.type === 'pool') {
+                eventImg.src = 'images/kdimage.png';
+            }
             eventImg.alt = activeEventData.name;
         }
 
@@ -89,8 +110,29 @@ async function loadActiveEvent() {
         // Show the event content and other sections
         document.getElementById('event-loading').style.display = 'none';
         document.getElementById('event-content').style.display = 'block';
-        document.getElementById('rsvp').style.display = 'block';
-        document.getElementById('guest-list-request').style.display = 'block';
+
+        // Branch on event type: pool gets the picks form, gathering gets RSVP.
+        if (activeEventData.type === 'pool') {
+            document.getElementById('rsvp').style.display = 'none';
+            document.getElementById('guest-list-request').style.display = 'none';
+            // Hide menu/bring/schedule rows that don't make sense for pools
+            const hideForPool = ['menu-section', 'schedule-section'];
+            hideForPool.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            const bringP = document.getElementById('event-bring');
+            if (bringP && bringP.parentElement) bringP.parentElement.style.display = 'none';
+
+            if (window.PoolRender && typeof window.PoolRender.renderPoolForm === 'function') {
+                window.PoolRender.renderPoolForm(activeEventData);
+            } else {
+                console.error('PoolRender not loaded');
+            }
+        } else {
+            document.getElementById('rsvp').style.display = 'block';
+            document.getElementById('guest-list-request').style.display = 'block';
+        }
         
         // Load weather AFTER all DOM elements are populated
         loadWeatherForEvent();

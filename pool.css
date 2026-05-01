@@ -1,0 +1,772 @@
+/* Pool styles - public form + admin panel.
+   Uses theme variables (--primary-dark, --primary-medium, --background, --accent)
+   defined in styles.css / theme-loader.js so it adopts whatever theme is active. */
+
+/* ---------- Public pool form ---------- */
+.pool-card {
+    background: var(--background, #fff);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 16px 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.pool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.pool-header h2 {
+    margin: 0;
+    font-family: 'Playfair Display', serif;
+    color: var(--primary-dark, #333);
+}
+
+.pool-countdown {
+    font-size: 14px;
+    color: var(--primary-medium, #666);
+    background: rgba(0, 0, 0, 0.04);
+    padding: 6px 12px;
+    border-radius: 16px;
+}
+
+.pool-countdown.locked {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.pool-lookup {
+    background: rgba(0, 0, 0, 0.02);
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 18px;
+}
+
+.pool-lookup p {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #666;
+}
+
+.pool-lookup-details {
+    margin-top: 18px;
+    padding: 12px 16px;
+    background: rgba(0, 0, 0, 0.02);
+    border-radius: 8px;
+    font-size: 13px;
+    color: #666;
+}
+
+.pool-lookup-details summary {
+    cursor: pointer;
+    color: var(--primary-medium, #666);
+}
+
+.pool-lookup-details input {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-right: 6px;
+    width: 200px;
+    max-width: 100%;
+}
+
+.pool-lookup-details button {
+    padding: 8px 14px;
+    background: var(--primary-medium, #888);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.pool-lookup input {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    margin-right: 6px;
+    width: 200px;
+    max-width: 100%;
+}
+
+.pool-lookup button {
+    padding: 8px 14px;
+    background: var(--primary-medium, #888);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.pool-lookup #pool-lookup-msg {
+    font-size: 12px;
+    color: #888;
+    margin: 6px 0 0;
+}
+
+.pool-identity {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 12px;
+    align-items: center;
+    margin-bottom: 18px;
+}
+
+.pool-identity input {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+
+.pool-question {
+    padding: 14px 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.pool-question:last-of-type {
+    border-bottom: none;
+}
+
+.pool-question-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.pool-question-head label {
+    font-weight: 600;
+    color: var(--primary-dark, #333);
+}
+
+.pool-question-meta {
+    font-size: 12px;
+    color: #888;
+    flex: 1;
+    margin-left: 10px;
+}
+
+.pool-lock-btn {
+    background: transparent;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.4;
+    transition: all 0.15s ease;
+}
+
+.pool-lock-btn:hover {
+    opacity: 0.7;
+}
+
+.pool-lock-btn.locked {
+    opacity: 1;
+    background: var(--accent, #d4a843);
+    border-color: var(--accent, #d4a843);
+}
+
+.pool-question select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    background: #fff;
+    font-size: 14px;
+}
+
+.pool-triple {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+}
+
+.pool-radio {
+    display: flex;
+    gap: 16px;
+}
+
+.pool-radio-label {
+    cursor: pointer;
+    font-weight: normal !important;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pool-summary {
+    margin-top: 20px;
+    padding: 14px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+    text-align: center;
+}
+
+.pool-max {
+    font-size: 16px;
+    color: var(--primary-dark, #333);
+}
+
+.pool-max strong {
+    font-size: 22px;
+    color: var(--accent, #d4a843);
+    margin-left: 6px;
+}
+
+.pool-fineprint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: #999;
+}
+
+.pool-primary-btn {
+    margin-top: 14px;
+    width: 100%;
+    padding: 12px;
+    background: var(--primary-dark, #333);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.pool-primary-btn:hover { opacity: 0.9; }
+.pool-primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+#pool-form-msg {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 13px;
+}
+
+/* Event list (index page) */
+#events-list-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+
+.event-card-link {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    transition: transform 0.15s ease;
+}
+
+.event-card-link:hover {
+    transform: translateY(-2px);
+}
+
+.event-card-list {
+    background: var(--background, #fff);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.event-card-img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    display: block;
+}
+
+.event-card-body {
+    padding: 14px 16px 18px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.event-card-meta {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.event-type-badge {
+    display: inline-block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+}
+
+.event-type-badge.pool {
+    background: #fff8e1;
+    color: #b27b00;
+    border: 1px solid #f0d062;
+}
+
+.event-type-badge.gathering {
+    background: #e8f0fe;
+    color: #1a73e8;
+    border: 1px solid #bcd4f8;
+}
+
+.event-card-active {
+    font-size: 11px;
+    color: #2e7d32;
+    background: #e8f5e9;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #c8e6c9;
+}
+
+.event-card-title {
+    margin: 4px 0 4px;
+    font-family: 'Playfair Display', serif;
+    color: var(--primary-dark, #333);
+    font-size: 20px;
+}
+
+.event-card-date {
+    margin: 0 0 8px;
+    color: #666;
+    font-size: 13px;
+}
+
+.event-card-desc {
+    margin: 0 0 12px;
+    font-size: 13px;
+    color: #555;
+    flex: 1;
+}
+
+.event-card-cta {
+    color: var(--primary-medium, #888);
+    font-weight: 600;
+    font-size: 13px;
+    margin-top: auto;
+}
+
+/* Public entries table (primary view) */
+.pool-entries-heading {
+    margin: 4px 0 10px;
+    font-size: 16px;
+    color: var(--primary-dark, #333);
+}
+
+.pool-entries-header-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #888;
+    border-bottom: 1px solid #eee;
+}
+
+.pool-entries-list {
+    margin-bottom: 8px;
+}
+
+.pool-entry-row {
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.pool-entry-row > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 1fr auto 24px;
+    gap: 8px;
+    align-items: center;
+    transition: background 0.1s;
+}
+
+.pool-entry-row > summary:hover {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+.pool-entry-row > summary::-webkit-details-marker { display: none; }
+
+.pool-entry-name {
+    font-size: 15px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pool-entry-amount {
+    text-align: right;
+    white-space: nowrap;
+    font-size: 15px;
+}
+
+.pool-entry-toggle {
+    font-size: 14px;
+    color: #999;
+    transition: transform 0.15s ease;
+    text-align: center;
+}
+
+.pool-entry-row[open] > summary .pool-entry-toggle {
+    transform: rotate(180deg);
+}
+
+.pool-rank-badge {
+    display: inline-block;
+    margin-right: 4px;
+    font-size: 16px;
+}
+
+.pool-max-cell {
+    color: #888;
+    font-style: italic;
+}
+
+.pool-entry-detail {
+    background: rgba(0, 0, 0, 0.02);
+    padding: 12px 16px;
+    font-size: 13px;
+}
+
+.pool-detail-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.pool-detail-list li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 5px 0;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.06);
+}
+
+.pool-detail-list li:last-child { border-bottom: none; }
+
+.pool-detail-label {
+    color: #666;
+    flex: 0 0 auto;
+}
+
+.pool-detail-value {
+    text-align: right;
+    color: var(--primary-dark, #333);
+    font-weight: 500;
+}
+
+.pool-detail-payoff.hit { color: #2e7d32; font-weight: 600; }
+.pool-detail-payoff.miss { color: #999; }
+
+.pool-detail-parlay {
+    margin-top: 6px;
+    padding-top: 8px !important;
+    border-top: 2px solid rgba(0, 0, 0, 0.1) !important;
+    font-weight: 600;
+}
+
+@media (max-width: 480px) {
+    .pool-entry-name { font-size: 14px; }
+    .pool-entry-amount { font-size: 14px; }
+    .pool-detail-list li { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .pool-detail-value { text-align: left; }
+}
+
+.pool-empty-entries {
+    background: rgba(0, 0, 0, 0.03);
+    padding: 20px;
+    border-radius: 8px;
+    text-align: center;
+    color: #666;
+}
+
+.pool-empty-entries p { margin: 0; }
+
+.pool-cta-row {
+    margin: 16px 0 6px;
+    text-align: center;
+}
+
+.pool-cta-row .pool-primary-btn {
+    width: auto;
+    padding: 12px 24px;
+    margin: 0 auto;
+}
+
+.pool-cta-row .pool-fineprint {
+    margin: 8px 0 0;
+}
+
+.pool-pick-chip-prop {
+    background: #fff3cd;
+    color: #856404;
+}
+
+#pool-form-wrap {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 2px solid #f0f0f0;
+}
+
+#pool-identity-msg {
+    margin: 6px 0 0;
+    font-size: 12px;
+}
+
+/* Result slip + standings */
+.pool-slip-bankroll {
+    font-size: 18px;
+    margin: 8px 0 14px;
+}
+
+.pool-slip-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pool-slip-list li {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    border-radius: 5px;
+    display: flex;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.pool-slip-list li.hit {
+    background: #d4edda;
+    color: #155724;
+}
+
+.pool-slip-list li.miss {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.pool-standings {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+
+.pool-standings th, .pool-standings td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.pool-standings tr.winner {
+    background: #fff8e1;
+    font-weight: 600;
+}
+
+/* ---------- Admin pool panel ---------- */
+.pool-admin-header {
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.pool-admin-meta {
+    font-size: 13px;
+    color: #666;
+    margin-top: 4px;
+}
+
+.pool-badge {
+    background: #4CAF50;
+    color: #fff;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+.pool-admin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.pool-admin-block {
+    background: #fafafa;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #eee;
+}
+
+.pool-results-block,
+.pool-entries-block {
+    grid-column: 1 / -1;
+}
+
+.pool-admin-block h3 {
+    margin-top: 0;
+    margin-bottom: 6px;
+    font-size: 16px;
+}
+
+.pool-admin-help {
+    font-size: 12px;
+    color: #888;
+    margin: 0 0 10px;
+}
+
+.pool-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.pool-table th, .pool-table td {
+    padding: 6px 10px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+
+.pool-table th {
+    background: #f0f0f0;
+    font-weight: 600;
+}
+
+.pool-tag {
+    display: inline-block;
+    background: #e8f0fe;
+    color: #1a73e8;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    margin-left: 6px;
+}
+
+.pool-remove-btn {
+    background: transparent;
+    border: 1px solid #ccc;
+    color: #888;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.pool-remove-btn:hover {
+    background: #f8d7da;
+    color: #721c24;
+    border-color: #f8d7da;
+}
+
+.pool-inline-form {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+
+.pool-inline-form input[type=text],
+.pool-inline-form input[type=number] {
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.pool-inline-form button {
+    padding: 6px 14px;
+    background: var(--primary-medium, #888);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.pool-secondary-btn {
+    padding: 6px 12px;
+    background: #fff;
+    color: var(--primary-dark, #333);
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    margin-top: 8px;
+}
+
+.pool-result-row {
+    margin-bottom: 10px;
+}
+
+.pool-result-row label {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: #555;
+}
+
+.pool-result-row select {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.pool-csv-import {
+    margin-top: 14px;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+}
+
+.pool-csv-import summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--primary-medium, #666);
+}
+
+.pool-csv-import textarea {
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.pool-pick-chip {
+    display: inline-block;
+    background: #f0f0f0;
+    border-radius: 4px;
+    padding: 2px 6px;
+    font-size: 11px;
+    margin: 1px;
+}
+
+@media (max-width: 720px) {
+    .pool-admin-grid { grid-template-columns: 1fr; }
+    .pool-triple { grid-template-columns: 1fr; }
+    .pool-identity { grid-template-columns: 1fr; }
+}
