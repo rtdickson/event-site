@@ -116,6 +116,11 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
             const messageText = Body.trim();
             const lower = messageText.toLowerCase();
 
+            // MUTE / UNMUTE — per-event opt-out (active event only)
+            if (lower === 'mute' || lower === 'unmute') {
+                return handleMuteToggle(From, lower === 'mute', res);
+            }
+
             // JULEP — recipe (theme command, works for anyone)
             if (lower === 'julep') {
                 await twilioClient.messages.create({
@@ -142,7 +147,7 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
                 } else if (lower === 'stats') {
                     responseMessage = await getEventStats();
                 } else if (lower === 'help') {
-                    responseMessage = 'Commands:\nUPDATE - Event details\nWIC - Who is coming\nSTATS - Guest count\nSAY <msg> - trash talk relay\nJULEP - mint julep recipe\nHELP - This message';
+                    responseMessage = 'Commands:\nUPDATE - Event details\nWIC - Who is coming\nSTATS - Guest count\nSAY <msg> - trash talk relay\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nHELP - This message';
                 } else {
                     // If admin sends RSVP-style message, treat as regular RSVP
                     return handleRegularRSVP(From, Body);
@@ -236,6 +241,91 @@ async function handleRegularRSVP(From, Body) {
     console.log(`SMS RSVP recorded from: ${From} for event: ${eventName}`);
 }
 
+// Phone normalization: strip non-digits, take last 10
+function normalizePhone(p) {
+    if (!p) return '';
+    const digits = String(p).replace(/\D/g, '');
+    return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+// E.164 format for Twilio — assumes US/Canada (+1) when no country code
+function toE164(phone) {
+    if (!phone) return null;
+    const s = String(phone).trim();
+    if (s.startsWith('+')) return s;
+    const digits = s.replace(/\D/g, '');
+    if (digits.length === 10) return '+1' + digits;
+    if (digits.length === 11 && digits[0] === '1') return '+' + digits;
+    return null; // unrecognized format — caller should skip
+}
+
+// Returns the poolConfig.mutedPhones array (normalized), or [] if none
+function mutedPhonesFor(event) {
+    const list = event && event.poolConfig && event.poolConfig.mutedPhones;
+    return Array.isArray(list) ? list.map(normalizePhone) : [];
+}
+
+function isMuted(event, phone) {
+    return mutedPhonesFor(event).includes(normalizePhone(phone));
+}
+
+// MUTE / UNMUTE: toggle the sender on the active event's mutedPhones list
+async function handleMuteToggle(From, mute, res) {
+    try {
+        const activeSnap = await db.collection('events').where('isActive', '==', true).limit(1).get();
+        if (activeSnap.empty) {
+            await twilioClient.messages.create({
+                body: 'No active event right now.',
+                from: process.env.TWILIO_PHONE_NUMBER,
+                to: From
+            });
+            return res.status(200).send('<Response></Response>');
+        }
+        const eventDoc = activeSnap.docs[0];
+        const event = eventDoc.data();
+        const eventName = event.name || 'this event';
+
+        const current = (event.poolConfig && event.poolConfig.mutedPhones) || [];
+        const norm = normalizePhone(From);
+        const existing = current.map(normalizePhone);
+        let next, replyText;
+
+        if (mute) {
+            if (existing.includes(norm)) {
+                replyText = `You're already muted for ${eventName}. Reply UNMUTE to turn messages back on.`;
+                next = current;
+            } else {
+                next = current.concat([From]);
+                replyText = `Muted for ${eventName}. You'll still get pick confirmations for your own submits, but no more chatter or alerts. Reply UNMUTE to undo.`;
+            }
+        } else {
+            if (!existing.includes(norm)) {
+                replyText = `You weren't muted for ${eventName}.`;
+                next = current;
+            } else {
+                next = current.filter(p => normalizePhone(p) !== norm);
+                replyText = `Unmuted — you'll get ${eventName} updates again.`;
+            }
+        }
+
+        if (next !== current) {
+            await db.collection('events').doc(eventDoc.id).update({
+                'poolConfig.mutedPhones': next
+            });
+        }
+
+        await twilioClient.messages.create({
+            body: replyText,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: From
+        });
+        return res.status(200).send('<Response></Response>');
+    } catch (err) {
+        console.error('handleMuteToggle error:', err);
+        return res.status(200).send('<Response></Response>');
+    }
+}
+
 // SAY <message> — relay trash talk to all entrants of the active event.
 // Sender's name from contacts collection (falls back to phone last 4).
 // Excludes the sender. Reply with delivery count.
@@ -287,14 +377,15 @@ async function handleTrashTalk(From, Body, res) {
         });
         if (!senderName) senderName = `${From.slice(-4)}`; // fallback to last 4 digits
 
-        // Get all entrant phones
+        // Get all entrant phones (skip sender + muted)
         const entriesSnap = await db.collection(collection).get();
         const phones = new Set();
         entriesSnap.forEach(doc => {
             const p = (doc.data() || {}).phone;
             if (!p) return;
-            const norm = String(p).replace(/\D/g, '').slice(-10);
+            const norm = normalizePhone(p);
             if (norm === fromNorm) return; // skip sender
+            if (isMuted(activeEvent, p)) return; // skip muted
             phones.add(p);
         });
 
@@ -307,18 +398,20 @@ async function handleTrashTalk(From, Body, res) {
             return res.status(200).send('<Response></Response>');
         }
 
-        const relayText = `[${senderName}] ${message}\nReply STOP to mute.`;
+        const relayText = `[${senderName}] ${message}\nReply MUTE to silence this event.`;
         let sent = 0, failed = 0;
         for (const phone of phones) {
+            const to = toE164(phone);
+            if (!to) { console.warn('Skipping unparseable phone:', phone); failed++; continue; }
             try {
                 await twilioClient.messages.create({
                     body: relayText,
                     from: process.env.TWILIO_PHONE_NUMBER,
-                    to: phone
+                    to
                 });
                 sent++;
             } catch (e) {
-                console.error('SAY relay failed for', phone, e.message);
+                console.error('SAY relay failed for', phone, '→', to, e.message);
                 failed++;
             }
         }
@@ -368,11 +461,13 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
 
             if (action === 'entry-confirm') {
                 if (!playerPhone) return res.status(400).json({ success: false, error: 'playerPhone required' });
+                const to = toE164(playerPhone);
+                if (!to) return res.status(400).json({ success: false, error: 'unparseable playerPhone' });
                 const text = `Got your picks for ${event.name}! ${pickSummary ? '\n' + pickSummary + '\n' : ''}Edit anytime before close: https://75pinegrove.com`;
                 await twilioClient.messages.create({
                     body: text,
                     from: process.env.TWILIO_PHONE_NUMBER,
-                    to: playerPhone
+                    to
                 });
                 return res.status(200).json({ success: true });
             }
@@ -400,20 +495,22 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
                 const { winnerPick, winnerChanged, isNewEntry } = req.body || {};
 
                 // 1) Confirm to player
-                if (playerPhone) {
+                const playerTo = toE164(playerPhone);
+                if (playerTo) {
                     try {
                         await twilioClient.messages.create({
                             body: `Got your picks for ${event.name}! ${pickSummary ? '\n' + pickSummary + '\n' : ''}Edit anytime before close: https://75pinegrove.com`,
                             from: process.env.TWILIO_PHONE_NUMBER,
-                            to: playerPhone
+                            to: playerTo
                         });
                     } catch (e) { console.error('Confirm SMS failed:', e.message); }
                 }
 
                 // 2) Notify admins
                 const adminText = `[${event.name}] ${playerName || 'Someone'} just ${isNewEntry ? 'submitted' : 'updated'} picks${pickSummary ? ': ' + pickSummary : '.'}`;
+                const playerNorm = normalizePhone(playerPhone);
                 for (const num of ADMIN_NUMBERS) {
-                    if (num === playerPhone) continue; // don't double-text admin if they submitted
+                    if (normalizePhone(num) === playerNorm) continue; // don't double-text admin if they submitted
                     try {
                         await twilioClient.messages.create({
                             body: adminText,
@@ -423,7 +520,7 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
                     } catch (e) { console.error('Admin notify failed for', num, e.message); }
                 }
 
-                // 3) Match alert: someone picked the same winner
+                // 3) Match alert: someone picked the same winner (skip muted phones)
                 let matchesSent = 0;
                 if (winnerPick && (isNewEntry || winnerChanged)) {
                     const config = event.poolConfig || {};
@@ -432,19 +529,24 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
                     const horseLabel = winContestant ? `#${winContestant.id} ${winContestant.name}` : `#${winnerPick}`;
 
                     if (event.collectionName) {
+                        const playerNorm2 = normalizePhone(playerPhone);
                         const entrySnap = await db.collection(event.collectionName).get();
                         for (const doc of entrySnap.docs) {
                             const d = doc.data();
-                            if (!d.phone || d.phone === playerPhone) continue;
+                            if (!d.phone) continue;
+                            if (normalizePhone(d.phone) === playerNorm2) continue;
                             if (Number((d.picks || {}).win) !== Number(winnerPick)) continue;
+                            if (isMuted(event, d.phone)) continue;
+                            const to = toE164(d.phone);
+                            if (!to) { console.warn('Skipping unparseable phone for match alert:', d.phone); continue; }
                             try {
                                 await twilioClient.messages.create({
-                                    body: `[${event.name}] ${playerName || 'Someone'} just picked ${horseLabel} too — you've got company on that pick. https://75pinegrove.com\nReply STOP to mute.`,
+                                    body: `[${event.name}] ${playerName || 'Someone'} just picked ${horseLabel} too — you've got company on that pick. https://75pinegrove.com\nReply MUTE to silence this event.`,
                                     from: process.env.TWILIO_PHONE_NUMBER,
-                                    to: d.phone
+                                    to
                                 });
                                 matchesSent++;
-                            } catch (e) { console.error('Match alert failed for', d.phone, e.message); }
+                            } catch (e) { console.error('Match alert failed for', d.phone, '→', to, e.message); }
                         }
                     }
                 }
@@ -470,22 +572,25 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
                     if (p) phones.add(p);
                 });
 
-                const broadcastBody = `${message}\n\nReply STOP to mute.`;
-                let sent = 0, failed = 0;
+                const broadcastBody = `${message}\n\nReply MUTE to silence this event.`;
+                let sent = 0, failed = 0, muted = 0;
                 for (const phone of phones) {
+                    if (isMuted(event, phone)) { muted++; continue; }
+                    const to = toE164(phone);
+                    if (!to) { console.warn('Skipping unparseable phone:', phone); failed++; continue; }
                     try {
                         await twilioClient.messages.create({
                             body: broadcastBody,
                             from: process.env.TWILIO_PHONE_NUMBER,
-                            to: phone
+                            to
                         });
                         sent++;
                     } catch (e) {
-                        console.error('Broadcast failed for', phone, e.message);
+                        console.error('Broadcast failed for', phone, '→', to, e.message);
                         failed++;
                     }
                 }
-                return res.status(200).json({ success: true, sent, failed, total: phones.size });
+                return res.status(200).json({ success: true, sent, failed, muted, total: phones.size });
             }
 
             return res.status(400).json({ success: false, error: 'Unknown action' });
@@ -512,7 +617,7 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
     // Help / status text
     if (responseText === 'help' || responseText === '') {
         await twilioClient.messages.create({
-            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nSAY <msg> - trash talk to all entrants\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
+            body: `${eventName} pool.\nPICK <#> - winner pick (e.g. PICK 7)\nSAY <msg> - trash talk to all entrants\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nFull slip (parlays, props): https://75pinegrove.com`,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: From
         });

@@ -409,8 +409,7 @@
         const lockBtn = q.lockable ? `
             <button type="button" class="pool-lock-btn ${currentEntry.locks.includes(q.id) ? 'locked' : ''}"
                 data-question-id="${q.id}" title="Lock this pick into your parlay">🔒</button>` : '';
-        const stake = q.stake || 10;
-        const help = renderQuestionHelp(q, stake);
+        const help = renderQuestionHelp(q);
 
         let body = '';
         switch (q.kind) {
@@ -470,12 +469,14 @@
         `;
     }
 
-    function renderQuestionHelp(q, stake) {
+    function renderQuestionHelp(q) {
+        const stake = window.PoolConfig.effectiveStake(q, activeEvent.poolConfig);
+        const flatPayoff = window.PoolConfig.payoffIfHit(q, stake);
         switch (q.kind) {
             case 'pickContestant': return `$${stake} → odds-based payoff`;
-            case 'orderedTriple':  return `$${stake} → $${q.payoff || 500} if exact`;
-            case 'unorderedTriple':return `$${stake} → $${q.payoff || 100} if all 3 in top 3`;
-            case 'pickLongshot':   return `$${stake} → $${q.payoff || 50} if top 3`;
+            case 'orderedTriple':  return `$${stake} → $${flatPayoff.toLocaleString()} if exact`;
+            case 'unorderedTriple':return `$${stake} → $${flatPayoff.toLocaleString()} if all 3 in top 3`;
+            case 'pickLongshot':   return `$${stake} → $${flatPayoff.toLocaleString()} if top 3`;
             case 'overUnder':
             case 'yesNo':          return `$${stake} even money`;
             default: return '';

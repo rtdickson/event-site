@@ -46,6 +46,9 @@
                     defaultStake: 10
                 };
             }
+            // One-time migration: legacy questions had hardcoded stake:10 and fixed `payoff`.
+            // New schema: questions inherit poolConfig.defaultStake; flat payoffs use payoffMultiplier.
+            await migrateLegacyQuestions();
             empty.style.display = 'none';
             content.style.display = 'block';
             renderAll();
@@ -71,6 +74,35 @@
         if (!snap.empty) return snap.docs[0];
 
         return null;
+    }
+
+    // One-time migration of legacy questions to new schema (no hardcoded stake, payoffMultiplier).
+    async function migrateLegacyQuestions() {
+        const questions = (currentPoolEvent.poolConfig.questions || []);
+        let dirty = false;
+        const migrated = questions.map(q => {
+            const next = Object.assign({}, q);
+            // Strip legacy stake:10 baseline so question inherits defaultStake
+            if (next.stake === 10) { delete next.stake; dirty = true; }
+            // Convert legacy fixed payoff to multiplier (was set at $10 baseline)
+            if (next.payoff !== undefined && next.payoffMultiplier === undefined) {
+                next.payoffMultiplier = next.payoff / 10;
+                delete next.payoff;
+                dirty = true;
+            }
+            return next;
+        });
+        if (dirty) {
+            currentPoolEvent.poolConfig.questions = migrated;
+            try {
+                await db.collection('events').doc(currentPoolEventId).update({
+                    'poolConfig.questions': migrated
+                });
+                console.log('Migrated pool questions to new stake/payoff schema');
+            } catch (err) {
+                console.warn('Migration save failed (non-fatal):', err);
+            }
+        }
     }
 
     // ----- Persistence -----
@@ -306,16 +338,19 @@
         if (questions.length === 0) {
             container.innerHTML = '<p class="pool-admin-help">No questions. Click "Reset to Derby defaults".</p>';
         } else {
+            const PC = window.PoolConfig;
             container.innerHTML = '<table class="pool-table"><thead><tr><th>Label</th><th>Kind</th><th>Stake</th><th>Payoff</th><th></th></tr></thead><tbody>'
                 + questions.map(q => {
-                    const payoffText = q.kind === 'pickContestant' ? `odds × $${q.stake}`
-                        : q.kind === 'overUnder' || q.kind === 'yesNo' ? `even ($${q.stake})`
-                        : `$${q.payoff || ''} flat`;
+                    const stake = PC.effectiveStake(q, currentPoolEvent.poolConfig);
+                    const flat = PC.payoffIfHit(q, stake);
+                    const payoffText = q.kind === 'pickContestant' ? `odds × $${stake}`
+                        : q.kind === 'overUnder' || q.kind === 'yesNo' ? `even ($${stake})`
+                        : `$${flat.toLocaleString()} flat`;
                     return `
                         <tr>
                             <td>${escapeHtml(q.label)}${q.lockable ? ' <span class="pool-tag">lockable</span>' : ''}</td>
                             <td>${escapeHtml(q.kind)}</td>
-                            <td>$${q.stake}</td>
+                            <td>$${stake}</td>
                             <td>${payoffText}</td>
                             <td><button data-question-id="${q.id}" class="pool-remove-btn">×</button></td>
                         </tr>

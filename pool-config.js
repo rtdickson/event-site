@@ -41,11 +41,15 @@
     // ----- Defaults -----
     const DEFAULT_STAKE = 10;
     const DEFAULT_PARLAY_LIMIT = 3;
-    const DEFAULT_FLAT_PAYOFFS = {
-        orderedTriple: 500,
-        unorderedTriple: 100,
-        pickLongshot: 50
+    // Multipliers for flat-payoff kinds: payoff = stake * multiplier.
+    // (Originally these were hardcoded $-amounts at $10 stake; multipliers let stakes scale.)
+    const DEFAULT_PAYOFF_MULTIPLIERS = {
+        orderedTriple: 50,    // $10 stake -> $500 trifecta
+        unorderedTriple: 10,  // $10 stake -> $100 box
+        pickLongshot: 5       // $10 stake -> $50 longshot bonus
     };
+    // Legacy fallback if old `payoff` field is present (back when stake was $10 baseline)
+    const LEGACY_BASELINE_STAKE = 10;
 
     // ----- Odds parsing -----
     // Accepts '8/1', '8-1', '5/2', 'EVEN', '1/1'. Returns { num, den, decimal }
@@ -62,18 +66,47 @@
     }
 
     // ----- Default Derby question set -----
-    // Admin can edit/add/remove. This is the seed.
+    // No hardcoded `stake` — questions inherit from poolConfig.defaultStake at scoring time.
+    // payoffMultiplier scales the flat-payoff questions with stake.
     function defaultDerbyQuestions() {
         return [
-            { id: 'win',      kind: 'pickContestant',  label: 'Pick the Winner',                 stake: 10, lockable: true,  resultKey: 'win' },
-            { id: 'place',    kind: 'pickContestant',  label: 'Finishes 2nd',                    stake: 10, lockable: true,  resultKey: 'place' },
-            { id: 'show',     kind: 'pickContestant',  label: 'Finishes 3rd',                    stake: 10, lockable: true,  resultKey: 'show' },
-            { id: 'tri',      kind: 'orderedTriple',   label: 'Trifecta (1-2-3 in order)',       stake: 10, payoff: 500 },
-            { id: 'box3',     kind: 'unorderedTriple', label: 'Top-3 Box (any order)',           stake: 10, payoff: 100 },
-            { id: 'longshot', kind: 'pickLongshot',    label: 'Longshot to finish top 3',        stake: 10, payoff: 50 },
-            { id: 'time',     kind: 'overUnder',       label: 'Winning time over/under 2:02',    stake: 10, line: '2:02' },
-            { id: 'fav',      kind: 'yesNo',           label: 'Will the favorite finish top 3?', stake: 10 }
+            { id: 'win',      kind: 'pickContestant',  label: 'Pick the Winner',                 lockable: true, resultKey: 'win' },
+            { id: 'place',    kind: 'pickContestant',  label: 'Finishes 2nd',                    lockable: true, resultKey: 'place' },
+            { id: 'show',     kind: 'pickContestant',  label: 'Finishes 3rd',                    lockable: true, resultKey: 'show' },
+            { id: 'tri',      kind: 'orderedTriple',   label: 'Trifecta (1-2-3 in order)',       payoffMultiplier: 50 },
+            { id: 'box3',     kind: 'unorderedTriple', label: 'Top-3 Box (any order)',           payoffMultiplier: 10 },
+            { id: 'longshot', kind: 'pickLongshot',    label: 'Longshot to finish top 3',        payoffMultiplier: 5 },
+            { id: 'time',     kind: 'overUnder',       label: 'Winning time over/under 2:02',    line: '2:02' },
+            { id: 'fav',      kind: 'yesNo',           label: 'Will the favorite finish top 3?'  }
         ];
+    }
+
+    // ----- Stake/payoff helpers -----
+    function effectiveStake(question, poolConfig) {
+        // Per-question custom stake wins; otherwise use pool default.
+        if (question && question.stake !== undefined && question.stake !== null) return question.stake;
+        return (poolConfig && poolConfig.defaultStake) || DEFAULT_STAKE;
+    }
+
+    // Returns the payoff if this question hits, given the effective stake and (for pickContestant) odds.
+    function payoffIfHit(question, stake, oddsDecimal) {
+        switch (question.kind) {
+            case 'pickContestant':
+                return Math.round(stake * (oddsDecimal || 0));
+            case 'overUnder':
+            case 'yesNo':
+                return stake;
+            case 'orderedTriple':
+            case 'unorderedTriple':
+            case 'pickLongshot': {
+                if (question.payoffMultiplier !== undefined) return Math.round(stake * question.payoffMultiplier);
+                // Legacy: convert old fixed `payoff` (was set at $10 baseline) to scale with stake
+                if (question.payoff !== undefined) return Math.round(question.payoff * (stake / LEGACY_BASELINE_STAKE));
+                return Math.round(stake * (DEFAULT_PAYOFF_MULTIPLIERS[question.kind] || 1));
+            }
+            default:
+                return 0;
+        }
     }
 
     // ----- Scoring -----
@@ -81,8 +114,8 @@
     // `pick` is whatever the user submitted; may be undefined (no answer).
     // `results` is the admin-entered results object (keys per question).
     // `contestants` lookup map: { [id]: contestantObject }
-    function scoreQuestion(question, pick, results, contestantsById) {
-        const stake = question.stake || DEFAULT_STAKE;
+    function scoreQuestion(question, pick, results, contestantsById, poolConfig) {
+        const stake = effectiveStake(question, poolConfig);
         const miss = { hit: false, payoff: 0 };
 
         if (pick === undefined || pick === null) return miss;
@@ -95,7 +128,7 @@
                 if (Number(pick) !== Number(result)) return miss;
                 const contestant = contestantsById[Number(pick)];
                 const odds = parseOdds(contestant && contestant.odds);
-                return { hit: true, payoff: Math.round(stake * odds.decimal) };
+                return { hit: true, payoff: payoffIfHit(question, stake, odds.decimal) };
             }
 
             case 'orderedTriple': {
@@ -103,7 +136,7 @@
                 if (!Array.isArray(result) || result.length !== 3) return miss;
                 const allMatch = pick.every((id, i) => Number(id) === Number(result[i]));
                 if (!allMatch) return miss;
-                return { hit: true, payoff: question.payoff || DEFAULT_FLAT_PAYOFFS.orderedTriple };
+                return { hit: true, payoff: payoffIfHit(question, stake) };
             }
 
             case 'unorderedTriple': {
@@ -113,21 +146,20 @@
                 const resultSet = new Set(result.map(Number));
                 if (pickSet.size !== 3 || resultSet.size !== 3) return miss;
                 for (const id of pickSet) if (!resultSet.has(id)) return miss;
-                return { hit: true, payoff: question.payoff || DEFAULT_FLAT_PAYOFFS.unorderedTriple };
+                return { hit: true, payoff: payoffIfHit(question, stake) };
             }
 
             case 'pickLongshot': {
-                // Hit if picked contestant finishes in top 3 (result is array of top-3 ids).
                 if (!Array.isArray(result)) return miss;
                 const found = result.some(id => Number(id) === Number(pick));
                 if (!found) return miss;
-                return { hit: true, payoff: question.payoff || DEFAULT_FLAT_PAYOFFS.pickLongshot };
+                return { hit: true, payoff: payoffIfHit(question, stake) };
             }
 
             case 'overUnder':
             case 'yesNo': {
                 if (String(pick).toLowerCase() !== String(result).toLowerCase()) return miss;
-                return { hit: true, payoff: stake }; // even money
+                return { hit: true, payoff: stake };
             }
 
             default:
@@ -155,7 +187,7 @@
         questions.forEach(q => { questionsById[q.id] = q; });
 
         const perQuestion = questions.map(q => {
-            const { hit, payoff } = scoreQuestion(q, picks[q.id], results, contestantsById);
+            const { hit, payoff } = scoreQuestion(q, picks[q.id], results, contestantsById, poolConfig);
             return { questionId: q.id, hit, payoff };
         });
 
@@ -174,7 +206,7 @@
 
         let parlayBonus = 0;
         if (parlayHitAll && results) {
-            const stake = (questionsById[locks[0]] && questionsById[locks[0]].stake) || DEFAULT_STAKE;
+            const stake = effectiveStake(questionsById[locks[0]], poolConfig);
             const product = parlayLegs.reduce((acc, leg) => acc * leg.odds.decimal, 1);
             parlayBonus = Math.round(stake * product);
         }
@@ -209,18 +241,14 @@
             const pick = picks[q.id];
             if (pick === undefined || pick === null || pick === '') continue;
             if (Array.isArray(pick) && (pick.length === 0 || pick.some(v => v === '' || v == null))) continue;
-            const stake = q.stake || DEFAULT_STAKE;
-            switch (q.kind) {
-                case 'pickContestant': {
-                    const c = contestantsById[Number(pick)];
-                    total += Math.round(stake * parseOdds(c && c.odds).decimal);
-                    break;
-                }
-                case 'orderedTriple':   total += q.payoff || DEFAULT_FLAT_PAYOFFS.orderedTriple; break;
-                case 'unorderedTriple': total += q.payoff || DEFAULT_FLAT_PAYOFFS.unorderedTriple; break;
-                case 'pickLongshot':    total += q.payoff || DEFAULT_FLAT_PAYOFFS.pickLongshot; break;
-                case 'overUnder':
-                case 'yesNo':           total += stake; break;
+            const stake = effectiveStake(q, poolConfig);
+            if (q.kind === 'pickContestant') {
+                const c = contestantsById[Number(pick)];
+                total += payoffIfHit(q, stake, parseOdds(c && c.odds).decimal);
+            } else if (q.kind === 'overUnder' || q.kind === 'yesNo') {
+                total += stake;
+            } else {
+                total += payoffIfHit(q, stake);
             }
         }
 
@@ -230,9 +258,8 @@
                 .map(qid => questionsById[qid])
                 .filter(q => q && q.lockable);
             if (validLegs.length === locks.length) {
-                const stake = validLegs[0].stake || DEFAULT_STAKE;
+                const stake = effectiveStake(validLegs[0], poolConfig);
                 const product = locks.reduce((acc, qid) => {
-                    const q = questionsById[qid];
                     const c = contestantsById[Number(picks[qid])];
                     return acc * parseOdds(c && c.odds).decimal;
                 }, 1);
@@ -263,9 +290,11 @@
         QUESTION_KINDS,
         DEFAULT_STAKE,
         DEFAULT_PARLAY_LIMIT,
-        DEFAULT_FLAT_PAYOFFS,
+        DEFAULT_PAYOFF_MULTIPLIERS,
         parseOdds,
         defaultDerbyQuestions,
+        effectiveStake,
+        payoffIfHit,
         scoreQuestion,
         scoreSlip,
         maxPossiblePayoff,
