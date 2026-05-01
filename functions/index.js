@@ -593,7 +593,21 @@ async function handleTrashTalk(From, Body, res) {
             const norm = String(d.phone).replace(/\D/g, '').slice(-10);
             if (norm === fromNorm) senderName = d.name || senderName;
         });
-        if (!senderName) senderName = `${From.slice(-4)}`; // fallback to last 4 digits
+        // Fallback: name from sender's pool entry, then last-4-digits
+        if (!senderName) {
+            try {
+                const entrySnap = await db.collection(collection).get();
+                entrySnap.forEach(doc => {
+                    if (senderName) return;
+                    const d = doc.data();
+                    const norm = String(d.phone || '').replace(/\D/g, '').slice(-10);
+                    if (norm === fromNorm && d.name && !/^unknown/i.test(d.name)) {
+                        senderName = d.name;
+                    }
+                });
+            } catch (e) { console.warn('Entry name fallback failed:', e); }
+        }
+        if (!senderName) senderName = From.slice(-4);
 
         // Get all entrant phones (skip sender + muted)
         const entriesSnap = await db.collection(collection).get();

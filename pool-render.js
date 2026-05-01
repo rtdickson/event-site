@@ -621,6 +621,37 @@
                     existingEntryId = ref.id;
                 }
             }
+
+            // Upsert into contacts so this phone shows up by name everywhere (SAY, broadcasts, etc.)
+            // Don't overwrite an existing real name — only fill in if missing/Unknown.
+            try {
+                const phoneNorm = normalizePhone(phone);
+                const contactsSnap = await db.collection('contacts').get();
+                let existingContact = null;
+                contactsSnap.forEach(doc => {
+                    if (existingContact) return;
+                    if (normalizePhone(doc.data().phone) === phoneNorm) {
+                        existingContact = { id: doc.id, data: doc.data() };
+                    }
+                });
+                if (!existingContact) {
+                    await db.collection('contacts').add({
+                        name: name,
+                        phone: phone,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } else {
+                    const existingName = (existingContact.data.name || '').trim();
+                    const isPlaceholder = !existingName || /^unknown/i.test(existingName);
+                    if (isPlaceholder && name) {
+                        await db.collection('contacts').doc(existingContact.id).update({ name });
+                    }
+                }
+                // Refresh local contacts cache so the entries table updates immediately
+                contactsByPhone[phoneNorm] = name;
+            } catch (err) {
+                console.warn('Contact upsert failed (non-fatal):', err);
+            }
             flashMessage('Picks saved! Good luck.', 'green');
             submitBtn.textContent = 'Update picks';
 
