@@ -5,6 +5,7 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Admin - Pine Grove Gatherings</title>
     <link href="styles.css" rel="stylesheet"/>
+    <link href="pool.css" rel="stylesheet"/>
 
     <!-- Firebase Scripts v10 -->
     <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
@@ -18,8 +19,10 @@
     <script src="auth.js"></script>
 
     <!-- Application Scripts -->
+    <script src="pool-config.js"></script>
     <script src="script-twilio.js"></script>
     <script src="script-admin.js"></script>
+    <script src="pool-admin.js"></script>
     <script src="script-common.js"></script>
 </head>
 
@@ -52,6 +55,7 @@
                     <li><a href="#" class="sidebar-link" data-panel="rsvps">RSVPs</a></li>
                     <li><a href="#" class="sidebar-link" data-panel="requests">Guest Requests</a></li>
                     <li><a href="#" class="sidebar-link" data-panel="events">Event Manager</a></li>
+                    <li><a href="#" class="sidebar-link" data-panel="pool">Pool</a></li>
                     <li><a href="#" class="sidebar-link" data-panel="settings">Settings</a></li>
                 </ul>
             </nav>
@@ -169,9 +173,29 @@
                                     <label for="event-name">Event Name:</label>
                                     <input id="event-name" type="text" required />
 
+                                    <label for="event-type" style="font-weight:600;">Event Type:</label>
+                                    <select id="event-type" style="background:#fff8e1; border:2px solid #d4a843; font-weight:600; padding:8px;">
+                                        <option value="gathering">Gathering (in-person, with RSVP and menu)</option>
+                                        <option value="pool">Pool (virtual, picks &amp; payoffs)</option>
+                                    </select>
+
                                     <label for="event-date">Date & Time:</label>
                                     <input id="event-date" type="datetime-local" required />
                                     <small id="event-date-preview" class="date-preview"></small>
+
+                                    <div id="pool-event-fields" style="display:none; padding:12px; margin:12px 0; border:1px solid #ddd; border-radius:6px; background:#fafafa;">
+                                        <h4 style="margin-top:0;">Pool Settings</h4>
+                                        <label for="pool-closes-at">Picks lock at:</label>
+                                        <input id="pool-closes-at" type="datetime-local" />
+                                        <small style="color:#666; display:block; margin-bottom:10px;">After this time, no new picks accepted. Defaults to event time if blank.</small>
+
+                                        <label for="pool-default-stake">Default stake (fun money per pick):</label>
+                                        <input id="pool-default-stake" type="number" min="1" value="10" />
+
+                                        <p style="margin:10px 0 0; font-size:13px; color:#555;">
+                                            After saving, manage horses, questions, and results in the <strong>Pool</strong> panel.
+                                        </p>
+                                    </div>
 
                                     <label for="event-image">Event Image:</label>
                                     <div class="event-image-upload">
@@ -184,14 +208,16 @@
                                     <label for="event-description">Description:</label>
                                     <textarea id="event-description" rows="3"></textarea>
 
-                                    <label for="event-menu">Menu Items (one per line):</label>
-                                    <textarea id="event-menu" rows="4"></textarea>
+                                    <div id="gathering-only-fields">
+                                        <label for="event-menu">Menu Items (one per line):</label>
+                                        <textarea id="event-menu" rows="4"></textarea>
 
-                                    <label for="event-bring">What to Bring:</label>
-                                    <input id="event-bring" type="text" />
+                                        <label for="event-bring">What to Bring:</label>
+                                        <input id="event-bring" type="text" />
 
-                                    <label for="event-schedule">Schedule Items (one per line):</label>
-                                    <textarea id="event-schedule" rows="4"></textarea>
+                                        <label for="event-schedule">Schedule Items (one per line):</label>
+                                        <textarea id="event-schedule" rows="4"></textarea>
+                                    </div>
 
                                     <div class="event-active-checkbox">
                                         <label>
@@ -211,6 +237,82 @@
                                 <h3>Existing Events</h3>
                                 <div id="events-list">
                                     Loading events...
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Panel: Pool -->
+                <div class="admin-panel" id="panel-pool">
+                    <section class="pool-admin-section">
+                        <h2>Pool Manager</h2>
+                        <div id="pool-admin-empty" style="display:none;">
+                            <p>No pool-type event found. Create an event with type "Pool" in the Event Manager first.</p>
+                        </div>
+                        <div id="pool-admin-content" style="display:none;">
+                            <div id="pool-admin-header" class="pool-admin-header"></div>
+
+                            <div class="pool-admin-grid">
+                                <div class="pool-admin-block">
+                                    <h3>Horses</h3>
+                                    <p class="pool-admin-help">The field. Add each horse with name and morning-line odds. Mark longshots (15:1+).</p>
+                                    <div id="pool-contestants-list"></div>
+                                    <form id="pool-contestant-form" class="pool-inline-form">
+                                        <input type="number" id="pool-contestant-id" placeholder="#" min="1" required style="width:60px;" />
+                                        <input type="text" id="pool-contestant-name" placeholder="Horse name" required />
+                                        <input type="text" id="pool-contestant-odds" placeholder="Odds (e.g. 8/1)" required style="width:90px;" />
+                                        <label style="font-size:12px;"><input type="checkbox" id="pool-contestant-longshot" /> Longshot</label>
+                                        <button type="submit">Add</button>
+                                    </form>
+
+                                    <details class="pool-csv-import">
+                                        <summary>Bulk import from CSV / paste</summary>
+                                        <p class="pool-admin-help" style="margin-top:8px;">
+                                            One row per horse. Columns: <code>position, name, odds, [longshot]</code>. Comma, tab, or pipe separated. Header row optional. Longshot column accepts yes/true/1/longshot. Scratched horses (Status column) are auto-skipped.
+                                        </p>
+                                        <div style="margin:8px 0;">
+                                            <label style="font-size:12px;">Upload CSV file: <input type="file" id="pool-csv-file" accept=".csv,text/csv,text/plain" /></label>
+                                        </div>
+                                        <textarea id="pool-csv-input" rows="6" placeholder="Post,Horse,Jockey,Trainer,Odds,Status&#10;1,Renegade,Irad Ortiz Jr.,Todd Pletcher,4-1,In&#10;2,Albus,Manuel Franco,Riley Mott,30-1,In"></textarea>
+                                        <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                                            <label style="font-size:12px;"><input type="radio" name="csv-mode" value="append" checked /> Append</label>
+                                            <label style="font-size:12px;"><input type="radio" name="csv-mode" value="replace" /> Replace existing field</label>
+                                            <button type="button" id="pool-csv-import-btn" class="pool-secondary-btn" style="margin-left:auto;">Import</button>
+                                        </div>
+                                        <p id="pool-csv-msg" class="pool-admin-help"></p>
+                                    </details>
+                                </div>
+
+                                <div class="pool-admin-block">
+                                    <h3>Questions</h3>
+                                    <p class="pool-admin-help">Markets guests pick from. Default Derby set is loaded for new pools — edit, remove, or add as needed.</p>
+                                    <div id="pool-questions-list"></div>
+                                    <button type="button" id="pool-reset-questions" class="pool-secondary-btn">Reset to Derby defaults</button>
+                                </div>
+
+                                <div class="pool-admin-block pool-results-block">
+                                    <h3>Results &amp; Standings</h3>
+                                    <p class="pool-admin-help">Enter results after the race. Standings are computed from the entries.</p>
+                                    <form id="pool-results-form"></form>
+                                    <div id="pool-standings"></div>
+                                </div>
+
+                                <div class="pool-admin-block pool-entries-block">
+                                    <h3>Entries</h3>
+                                    <div id="pool-entries-list"></div>
+                                </div>
+
+                                <div class="pool-admin-block pool-broadcast-block">
+                                    <h3>Broadcast SMS</h3>
+                                    <p class="pool-admin-help">Send an update to everyone who has submitted picks. Use sparingly — friends will receive a real text.</p>
+                                    <textarea id="pool-broadcast-message" rows="3" placeholder="e.g. Final 30 min — get your picks in!"></textarea>
+                                    <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+                                        <input id="pool-broadcast-pin" type="password" placeholder="Admin PIN" style="width:120px;" />
+                                        <button type="button" id="pool-broadcast-btn" class="pool-primary-btn" style="width:auto; padding:8px 16px; margin:0;">Send to all entrants</button>
+                                        <span id="pool-broadcast-count" class="pool-admin-help"></span>
+                                    </div>
+                                    <p id="pool-broadcast-msg" class="pool-admin-help"></p>
                                 </div>
                             </div>
                         </div>

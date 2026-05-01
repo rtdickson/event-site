@@ -38,6 +38,7 @@ async function initializeAdmin() {
     initializeThemePicker();
     setupImagePreview();
     setupDatePreview();
+    setupEventTypeToggle();
 
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
@@ -196,6 +197,21 @@ function setupDatePreview() {
     });
 }
 
+// Show/hide pool-specific event fields based on type selector.
+function setupEventTypeToggle() {
+    const typeSelect = document.getElementById('event-type');
+    const poolFields = document.getElementById('pool-event-fields');
+    const gatheringFields = document.getElementById('gathering-only-fields');
+    if (!typeSelect) return;
+    const sync = () => {
+        const isPool = typeSelect.value === 'pool';
+        if (poolFields) poolFields.style.display = isPool ? 'block' : 'none';
+        if (gatheringFields) gatheringFields.style.display = isPool ? 'none' : 'block';
+    };
+    typeSelect.addEventListener('change', sync);
+    sync();
+}
+
 // Convert a display date string back to datetime-local format (best effort)
 function displayDateToInputValue(displayDate) {
     if (!displayDate) return '';
@@ -315,7 +331,27 @@ async function editEvent(eventId) {
         document.getElementById('event-bring').value = data.whatToBring || '';
         document.getElementById('event-schedule').value = Array.isArray(data.schedule) ? data.schedule.join('\n') : '';
         document.getElementById('event-active').checked = data.isActive || false;
-        
+
+        // Event type + pool fields
+        const typeSelect = document.getElementById('event-type');
+        if (typeSelect) {
+            typeSelect.value = data.type || 'gathering';
+        }
+        const poolFields = document.getElementById('pool-event-fields');
+        if (poolFields) {
+            poolFields.style.display = (data.type === 'pool') ? 'block' : 'none';
+        }
+        if (data.type === 'pool' && data.poolConfig) {
+            const closesAt = document.getElementById('pool-closes-at');
+            if (closesAt) {
+                closesAt.value = data.poolConfig.closesAtRaw || '';
+            }
+            const stakeInput = document.getElementById('pool-default-stake');
+            if (stakeInput) {
+                stakeInput.value = data.poolConfig.defaultStake || 10;
+            }
+        }
+
         // Show existing event image in preview
         const preview = document.getElementById('event-image-preview');
         if (preview) {
@@ -379,6 +415,10 @@ function clearEventForm() {
     if (preview) {
         preview.innerHTML = '<span>No image selected (Bend in the River logo will be used)</span>';
     }
+    const poolFields = document.getElementById('pool-event-fields');
+    if (poolFields) poolFields.style.display = 'none';
+    const typeSelect = document.getElementById('event-type');
+    if (typeSelect) typeSelect.value = 'gathering';
 }
 
 async function loadEventOptions() {
@@ -1332,8 +1372,12 @@ if (eventForm) {
         
         const eventName = document.getElementById('event-name').value;
         const dateRaw = document.getElementById('event-date').value;
+        const typeSelect = document.getElementById('event-type');
+        const eventType = typeSelect ? typeSelect.value : 'gathering';
+
         const eventData = {
             name: eventName,
+            type: eventType,
             date: formatDateForDisplay(dateRaw) || dateRaw,
             dateRaw: dateRaw,
             description: document.getElementById('event-description').value,
@@ -1343,6 +1387,37 @@ if (eventForm) {
             collectionName: createCollectionName(eventName),
             isActive: document.getElementById('event-active').checked
         };
+
+        if (eventType === 'pool') {
+            const closesAtRaw = document.getElementById('pool-closes-at').value;
+            const stake = parseInt(document.getElementById('pool-default-stake').value, 10) || 10;
+
+            // Preserve existing poolConfig (contestants/questions/results) on edit; only update top-level pool settings here.
+            let existingPoolConfig = {};
+            const editId = eventForm.getAttribute('data-edit-id');
+            if (editId) {
+                try {
+                    const existing = await db.collection('events').doc(editId).get();
+                    if (existing.exists && existing.data().poolConfig) {
+                        existingPoolConfig = existing.data().poolConfig;
+                    }
+                } catch (err) {
+                    console.warn('Could not fetch existing poolConfig:', err);
+                }
+            }
+
+            eventData.poolConfig = Object.assign({}, existingPoolConfig, {
+                closesAtRaw: closesAtRaw || dateRaw,
+                closesAt: closesAtRaw
+                    ? firebase.firestore.Timestamp.fromDate(new Date(closesAtRaw))
+                    : firebase.firestore.Timestamp.fromDate(new Date(dateRaw)),
+                defaultStake: stake,
+                // Seed defaults if this is a brand-new pool
+                contestants: existingPoolConfig.contestants || [],
+                questions: existingPoolConfig.questions || (window.PoolConfig ? window.PoolConfig.defaultDerbyQuestions() : []),
+                results: existingPoolConfig.results || null
+            });
+        }
 
         // Handle image upload if a file was selected
         const imageInput = document.getElementById('event-image');
