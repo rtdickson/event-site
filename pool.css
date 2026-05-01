@@ -799,6 +799,20 @@
     font-size: 12px;
 }
 
+.pool-muted-badge {
+    display: inline-block;
+    background: #f0f0f0;
+    color: #888;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    margin-left: 4px;
+}
+
+.pool-muted-count {
+    color: #888;
+}
+
 .pool-pick-chip {
     display: inline-block;
     background: #f0f0f0;

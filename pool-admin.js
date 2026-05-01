@@ -269,6 +269,7 @@
         const closesText = closesAt && closesAt.toDate
             ? closesAt.toDate().toLocaleString()
             : 'not set';
+        const muted = (currentPoolEvent.poolConfig.mutedPhones || []).length;
         header.innerHTML = `
             <div><strong>${escapeHtml(currentPoolEvent.name)}</strong>
                 ${currentPoolEvent.isActive ? '<span class="pool-badge">ACTIVE</span>' : ''}
@@ -276,6 +277,7 @@
             <div class="pool-admin-meta">
                 Closes: ${escapeHtml(closesText)}
                 &middot; Stake: $${currentPoolEvent.poolConfig.defaultStake || 10}
+                ${muted > 0 ? `&middot; <span class="pool-muted-count">🔇 ${muted} muted</span>` : ''}
             </div>
         `;
     }
@@ -474,16 +476,20 @@
             const contestantsById = {};
             contestants.forEach(c => { contestantsById[Number(c.id)] = c; });
 
+            const mutedNorm = (currentPoolEvent.poolConfig.mutedPhones || [])
+                .map(p => String(p).replace(/\D/g, '').slice(-10));
             const rows = snap.docs.map(doc => {
                 const data = doc.data();
                 const picks = data.picks || {};
                 const locks = data.locks || [];
+                const phoneNorm = String(data.phone || '').replace(/\D/g, '').slice(-10);
+                const isMuted = phoneNorm && mutedNorm.includes(phoneNorm);
                 const pickSummary = Object.entries(picks).map(([qid, pick]) => {
                     return `<span class="pool-pick-chip">${escapeHtml(qid)}: ${formatPick(pick, contestantsById)}${locks.includes(qid) ? ' 🔒' : ''}</span>`;
                 }).join(' ');
                 return `
                     <tr>
-                        <td>${escapeHtml(data.name || 'Unknown')}</td>
+                        <td>${escapeHtml(data.name || 'Unknown')}${isMuted ? ' <span class="pool-muted-badge" title="Muted this event via SMS">🔇 muted</span>' : ''}</td>
                         <td>${escapeHtml(data.phone || '')}</td>
                         <td>${pickSummary}</td>
                         <td><button data-entry-id="${doc.id}" class="pool-remove-btn">×</button></td>
