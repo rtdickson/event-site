@@ -631,6 +631,27 @@
     font-size: 15px;
 }
 
+.pool-entry-tiebreak {
+    font-size: 11px;
+    color: #8b6914;
+    margin-top: 2px;
+    font-weight: normal;
+}
+
+.pool-entry-tied {
+    background: rgba(212, 168, 67, 0.05);
+}
+
+.pool-tiebreak-note {
+    margin: 4px 0 10px;
+    padding: 8px 12px;
+    background: #fff8e1;
+    border-left: 3px solid var(--accent, #d4a843);
+    border-radius: 4px;
+    font-size: 12px;
+    color: #5c4a1a;
+}
+
 .pool-entry-toggle {
     font-size: 14px;
     color: #999;

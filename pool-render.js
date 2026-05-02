@@ -194,18 +194,34 @@
             // Total potential purse across all entries (pre-results only)
             const totalPurse = hasResults ? null : ranked.reduce((s, r) => s + (r.max || 0), 0);
 
-            const rows = ranked.map(({ data, displayName, score, max, slipProb }, i) => {
+            // Mark entries tied with at least one other (same bankroll), so we can show tiebreaker math inline
+            const tiedIndexes = new Set();
+            if (hasResults) {
+                for (let i = 0; i < ranked.length; i++) {
+                    for (let j = 0; j < ranked.length; j++) {
+                        if (i !== j && ranked[i].score.bankroll === ranked[j].score.bankroll) {
+                            tiedIndexes.add(i);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const rows = ranked.map(({ data, displayName, score, max, slipProb, tieBreak }, i) => {
                 const hasLocks = Array.isArray(data.locks) && data.locks.length >= 2;
                 const oddsStr = (!hasResults && slipProb)
                     ? `<div class="pool-entry-odds">odds ${window.PoolConfig.formatOddsAgainst(slipProb)}</div>`
                     : '';
+                const tiebreakStr = (hasResults && tiedIndexes.has(i) && tieBreak)
+                    ? `<div class="pool-entry-tiebreak">tri: ${tieBreak.setMatch}/3 set, ${tieBreak.exactMatch}/3 exact</div>`
+                    : '';
                 const amountStr = hasResults
-                    ? `<strong>$${score.bankroll.toLocaleString()}</strong>`
+                    ? `<strong>$${score.bankroll.toLocaleString()}</strong>${tiebreakStr}`
                     : `<span class="pool-max-cell">$${max.toLocaleString()}</span>${oddsStr}`;
                 const detail = renderEntryDetail(data, config, contestantsById, score);
                 const rankBadge = hasResults && i < 3 ? `<span class="pool-rank-badge rank-${i+1}">${['🥇','🥈','🥉'][i]}</span>` : '';
                 return `
-                    <details class="pool-entry-row">
+                    <details class="pool-entry-row${tiedIndexes.has(i) ? ' pool-entry-tied' : ''}">
                         <summary>
                             <span class="pool-entry-name">${rankBadge}<strong>${escapeHtml(displayName)}</strong>${hasLocks ? ' <span class="pool-tag">parlay</span>' : ''}</span>
                             <span class="pool-entry-amount">${amountStr}</span>
@@ -215,6 +231,10 @@
                     </details>
                 `;
             }).join('');
+
+            const tiebreakerNote = (hasResults && tiedIndexes.size > 0)
+                ? `<p class="pool-tiebreak-note">⚖️ Ties broken by trifecta closeness: most picked horses in the actual top 3 (set match) wins; if still tied, most horses in correct finishing position (exact match) wins.</p>`
+                : '';
 
             const headerLabel = hasResults ? 'Bankroll' : 'Potential purse';
             const totalLine = (!hasResults && totalPurse > 0)
@@ -230,6 +250,7 @@
                 ${winnerBanner}
                 <h3 class="pool-entries-heading">${hasResults ? 'Standings' : 'Entries so far'} (${snap.size})</h3>
                 ${totalLine}
+                ${tiebreakerNote}
                 <div class="pool-entries-header-row">
                     <span>Name</span>
                     <span>${headerLabel}</span>
