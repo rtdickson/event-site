@@ -325,11 +325,48 @@
 }
 
 /* Event list (index page) */
-#events-list-container {
+#events-list-container { margin-top: 16px; }
+
+.events-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
     gap: 16px;
-    margin-top: 16px;
+    margin-bottom: 24px;
+}
+
+.events-section-heading {
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    color: var(--primary-dark, #333);
+    margin: 24px 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #eee;
+}
+
+.events-section-recent {
+    color: #8b6914;
+}
+
+.event-card-completed {
+    opacity: 0.96;
+}
+
+.event-card-completed .event-card-img {
+    filter: saturate(0.85) brightness(0.96);
+}
+
+.event-card-winner {
+    margin: 6px 0 8px;
+    padding: 8px 10px;
+    background: linear-gradient(to right, rgba(212, 168, 67, 0.15), transparent);
+    border-left: 3px solid var(--accent, #d4a843);
+    border-radius: 4px;
+    font-size: 14px;
+    color: var(--primary-dark, #333);
+}
+
+.event-card-winner strong {
+    color: #8b6914;
 }
 
 .event-card-link {
