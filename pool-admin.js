@@ -312,7 +312,7 @@
             });
         }
 
-        // CSV file → textarea, then auto-import (idempotent)
+        // CSV file → textarea (no auto-import — user picks mode, then clicks Import)
         const fileInput = document.getElementById('pool-csv-file');
         if (fileInput && !fileInput.dataset.wired) {
             fileInput.dataset.wired = '1';
@@ -322,9 +322,11 @@
                 const reader = new FileReader();
                 reader.onload = (e) => {
                     document.getElementById('pool-csv-input').value = e.target.result || '';
-                    // Auto-trigger import — user explicitly chose this file
-                    const btn = document.getElementById('pool-csv-import-btn');
-                    if (btn) btn.click();
+                    const msg = document.getElementById('pool-csv-msg');
+                    if (msg) {
+                        msg.textContent = `Loaded "${f.name}". Pick Append or Replace, then click Import.`;
+                        msg.style.color = '#666';
+                    }
                 };
                 reader.readAsText(f);
             });
