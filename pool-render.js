@@ -245,12 +245,15 @@
                 : '';
 
             const auditBadge = renderAuditBadge();
+            const tieAnalysis = (hasResults && tiedIndexes.has(0))
+                ? renderTieAnalysis(ranked)
+                : '';
 
             container.innerHTML = `
+                ${tieAnalysis}
                 ${winnerBanner}
                 <h3 class="pool-entries-heading">${hasResults ? 'Standings' : 'Entries so far'} (${snap.size})</h3>
                 ${totalLine}
-                ${tiebreakerNote}
                 <div class="pool-entries-header-row">
                     <span>Name</span>
                     <span>${headerLabel}</span>
@@ -310,6 +313,51 @@
         });
     }
 
+    // Tie analysis — sits ABOVE the winner banner when the top spot was decided by tiebreaker.
+    // Spells out the cascade in plain language so the math is visible up front.
+    function renderTieAnalysis(ranked) {
+        const winnerBankroll = ranked[0].score.bankroll;
+        const tiedAtTop = ranked.filter(r => r.score.bankroll === winnerBankroll);
+        if (tiedAtTop.length < 2) return '';
+
+        const winner = tiedAtTop[0];
+        const runnerUp = tiedAtTop[1];
+        const wTie = winner.tieBreak;
+        const rTie = runnerUp.tieBreak;
+
+        // Determine which level of the cascade resolved it
+        let resolvedBy = '';
+        if (wTie.setMatch !== rTie.setMatch) {
+            resolvedBy = `more right horses in the trifecta (${wTie.setMatch}/3 vs ${rTie.setMatch}/3)`;
+        } else if (wTie.exactMatch !== rTie.exactMatch) {
+            resolvedBy = `more horses in their correct finishing position (${wTie.exactMatch}/3 vs ${rTie.exactMatch}/3 exact match)`;
+        } else {
+            resolvedBy = `still tied even on trifecta closeness — ranking is non-deterministic`;
+        }
+
+        const tiedRows = tiedAtTop.map((r, i) => {
+            const isWinner = i === 0;
+            return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
+                <span class="pool-tie-rank">${isWinner ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '·'))}</span>
+                <span class="pool-tie-name">${escapeHtml(r.displayName)}</span>
+                <span class="pool-tie-score">${r.tieBreak.setMatch}/3 set · ${r.tieBreak.exactMatch}/3 exact</span>
+            </li>`;
+        }).join('');
+
+        return `
+            <div class="pool-tie-analysis">
+                <div class="pool-tie-header">⚖️ ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}</div>
+                <p class="pool-tie-explainer">
+                    Tiebreaker: trifecta closeness. <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.
+                </p>
+                <ul class="pool-tie-table">${tiedRows}</ul>
+                <p class="pool-tie-fineprint">
+                    <em>Set match</em> = how many of your trifecta picks landed in the actual top 3 (any order). <em>Exact match</em> = how many landed in the correct finishing position. Cascade: bankroll → set match → exact match.
+                </p>
+            </div>
+        `;
+    }
+
     // Big celebratory banner shown above the standings once results are in.
     function renderWinnerBanner(winner, config, contestantsById) {
         const results = config.results || {};
@@ -337,6 +385,20 @@
               </div>`
             : '';
 
+        // "Why they won" — only show if there was a tie at the top
+        let whyLine = '';
+        if (winner.tieBreak) {
+            const wt = winner.tieBreak;
+            // Only show if winner has any trifecta hits worth bragging about, or there was a tie
+            // (we only enter this banner code if there's a winner, and we'll render whyLine
+            // unconditionally if score.bankroll > 0 to give credit; tie analysis already explains the cascade above)
+            if (wt.setMatch > 0 || wt.exactMatch > 0) {
+                whyLine = `<div class="pool-winner-why">
+                    Trifecta picks: <strong>${wt.setMatch}/3 right horses, ${wt.exactMatch}/3 in correct position</strong>
+                </div>`;
+            }
+        }
+
         return `
             <div class="pool-winner-banner">
                 <div class="pool-winner-trophy">🏆</div>
@@ -344,6 +406,7 @@
                     <div class="pool-winner-label">${escapeHtml(activeEvent.name)} Winner</div>
                     <div class="pool-winner-name">${escapeHtml(winner.displayName)}</div>
                     <div class="pool-winner-bankroll">Bankroll: <strong>$${winner.score.bankroll.toLocaleString()}</strong></div>
+                    ${whyLine}
                 </div>
                 ${resultsLine}
             </div>
