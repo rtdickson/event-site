@@ -50,9 +50,6 @@
     // ----- Admin: seal entries -----
     async function sealEntries(eventId, eventData) {
         if (!eventData || !eventData.collectionName) throw new Error('No event collectionName');
-        if (typeof firebase === 'undefined' || !firebase.storage) {
-            throw new Error('Firebase Storage not loaded — add firebase-storage-compat to admin.html');
-        }
         const snap = await db.collection(eventData.collectionName).get();
         const entries = snap.docs.map(d => d.data());
         if (entries.length === 0) throw new Error('No entries to seal');
@@ -65,14 +62,21 @@
         });
         const hash = await sha256Hex(canonicalStr);
 
-        // Upload snapshot to storage
-        const blob = new Blob([canonicalStr], { type: 'application/json' });
-        const path = `audit/${eventId}/${Date.now()}-${hash.slice(0, 8)}.json`;
-        const ref = firebase.storage().ref(path);
-        await ref.put(blob, { contentType: 'application/json' });
-        const url = await ref.getDownloadURL();
+        // Try to also upload to Storage (redundant public archive). Don't fail seal if it fails.
+        let url = null, path = null;
+        if (typeof firebase !== 'undefined' && firebase.storage) {
+            try {
+                const blob = new Blob([canonicalStr], { type: 'application/json' });
+                path = `audit/${eventId}/${Date.now()}-${hash.slice(0, 8)}.json`;
+                const ref = firebase.storage().ref(path);
+                await ref.put(blob, { contentType: 'application/json' });
+                url = await ref.getDownloadURL();
+            } catch (err) {
+                console.warn('Storage upload failed (non-fatal — snapshot stored in Firestore):', err);
+            }
+        }
 
-        // Save seal to event doc
+        // Save seal + snapshot text to event doc. Snapshot in Firestore avoids CORS issues on verify.
         await db.collection('events').doc(eventId).update({
             auditSeal: {
                 hash,
@@ -81,7 +85,8 @@
                 sealedAt: firebase.firestore.Timestamp.fromDate(new Date(sealedAtIso)),
                 sealedAtIso,
                 entryCount: entries.length,
-                version: 1
+                snapshotJson: canonicalStr,
+                version: 2
             }
         });
 
@@ -91,15 +96,24 @@
     // ----- Public: verify seal -----
     async function verifySeal(eventData) {
         const seal = eventData && eventData.auditSeal;
-        if (!seal || !seal.url || !seal.hash) {
+        if (!seal || !seal.hash) {
             return { ok: false, status: 'no-seal', message: 'No seal recorded for this event yet.' };
         }
         try {
-            const resp = await fetch(seal.url);
-            if (!resp.ok) {
-                return { ok: false, status: 'fetch-failed', message: `Could not fetch snapshot (HTTP ${resp.status})` };
+            // Prefer Firestore-stored snapshot (no CORS); fall back to Storage URL fetch
+            let text;
+            if (seal.snapshotJson) {
+                text = seal.snapshotJson;
+            } else if (seal.url) {
+                const resp = await fetch(seal.url);
+                if (!resp.ok) {
+                    return { ok: false, status: 'fetch-failed', message: `Could not fetch snapshot (HTTP ${resp.status})` };
+                }
+                text = await resp.text();
+            } else {
+                return { ok: false, status: 'no-snapshot', message: 'Seal has no snapshot to verify against.' };
             }
-            const text = await resp.text();
+
             const recomputedHash = await sha256Hex(text);
             const ok = recomputedHash === seal.hash;
             return {
@@ -116,7 +130,7 @@
             };
         } catch (err) {
             console.error('verifySeal error:', err);
-            return { ok: false, status: 'error', message: err.message };
+            return { ok: false, status: 'error', message: 'Verify error: ' + err.message };
         }
     }
 
