@@ -269,7 +269,9 @@
                                     <details class="pool-csv-import">
                                         <summary>Bulk import from CSV / paste</summary>
                                         <p class="pool-admin-help" style="margin-top:8px;">
-                                            One row per horse. Columns: <code>position, name, odds, [longshot]</code>. Comma, tab, or pipe separated. Header row optional. Longshot column accepts yes/true/1/longshot. Scratched horses (Status column) are auto-skipped.
+                                            <strong>Full import:</strong> <code>position, name, odds, [longshot]</code> — adds new horses or replaces field.<br>
+                                            <strong>Odds-only update:</strong> <code>position, odds</code> — updates odds on existing horses only, recomputes longshot flag automatically. Use this for race-day odds refreshes.<br>
+                                            Comma, tab, or pipe separated. Header row optional. Scratched horses (Status column) are auto-skipped.
                                         </p>
                                         <div style="margin:8px 0;">
                                             <label style="font-size:12px;">Upload CSV file: <input type="file" id="pool-csv-file" accept=".csv,text/csv,text/plain" /></label>

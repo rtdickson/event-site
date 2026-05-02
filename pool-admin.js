@@ -354,25 +354,47 @@
                     return;
                 }
 
-                const existing = mode === 'replace' ? [] : (currentPoolEvent.poolConfig.contestants || []).slice();
-                const existingIds = new Set(existing.map(c => Number(c.id)));
-                const skipped = [];
-                parsed.rows.forEach(r => {
-                    if (existingIds.has(Number(r.id))) {
-                        skipped.push(r.id);
-                    } else {
-                        existing.push(r);
-                        existingIds.add(Number(r.id));
-                    }
-                });
-                existing.sort((a, b) => a.id - b.id);
-                await savePoolConfig({ contestants: existing });
-                renderContestants();
-                renderResultsForm();
+                let summary;
+                if (parsed.mode === 'odds-only') {
+                    // Merge: update odds (and recomputed longshot) on existing horses; report unmatched ids.
+                    const current = (currentPoolEvent.poolConfig.contestants || []).slice();
+                    const byId = new Map(current.map(c => [Number(c.id), c]));
+                    const updatedIds = [];
+                    const unknownIds = [];
+                    parsed.rows.forEach(r => {
+                        const existing = byId.get(Number(r.id));
+                        if (!existing) { unknownIds.push(r.id); return; }
+                        existing.odds = r.odds;
+                        existing.isLongshot = r.isLongshot;
+                        updatedIds.push(r.id);
+                    });
+                    await savePoolConfig({ contestants: current });
+                    renderContestants();
+                    renderResultsForm();
+                    summary = `Updated odds for ${updatedIds.length} horse${updatedIds.length === 1 ? '' : 's'} (${updatedIds.join(', ')}).`;
+                    if (unknownIds.length) summary += ` Unknown post #s skipped: ${unknownIds.join(', ')}.`;
+                } else {
+                    // Full import: add or replace
+                    const existing = mode === 'replace' ? [] : (currentPoolEvent.poolConfig.contestants || []).slice();
+                    const existingIds = new Set(existing.map(c => Number(c.id)));
+                    const skipped = [];
+                    parsed.rows.forEach(r => {
+                        if (existingIds.has(Number(r.id))) {
+                            skipped.push(r.id);
+                        } else {
+                            existing.push(r);
+                            existingIds.add(Number(r.id));
+                        }
+                    });
+                    existing.sort((a, b) => a.id - b.id);
+                    await savePoolConfig({ contestants: existing });
+                    renderContestants();
+                    renderResultsForm();
 
-                const importedCount = parsed.rows.length - skipped.length;
-                let summary = `Imported ${importedCount} contestant${importedCount === 1 ? '' : 's'}.`;
-                if (skipped.length) summary += ` Skipped duplicate IDs: ${skipped.join(', ')}.`;
+                    const importedCount = parsed.rows.length - skipped.length;
+                    summary = `Imported ${importedCount} horse${importedCount === 1 ? '' : 's'}.`;
+                    if (skipped.length) summary += ` Skipped duplicate IDs: ${skipped.join(', ')}.`;
+                }
                 if (parsed.skipped && parsed.skipped.length) summary += ` Skipped from CSV: ${parsed.skipped.join(', ')}.`;
                 msg.textContent = summary;
                 msg.style.color = 'green';
@@ -700,19 +722,22 @@
     }
 
     // CSV parser: header-aware. Maps columns by name (post, name/horse, odds, longshot, status).
+    // Modes:
+    //   'full' — full import; rows include name (required)
+    //   'odds-only' — minimal Post + Odds only; merges into existing horses by id
     // Skips rows where Status contains SCRATCHED. Auto-flags longshots at 15:1+ if no longshot column.
     function parseContestantCsv(raw) {
         const errors = [];
         const rows = [];
         const skipped = [];
         const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-        if (lines.length === 0) return { rows, errors, skipped };
+        if (lines.length === 0) return { rows, errors, skipped, mode: 'full' };
 
         const splitRow = (line) => line.split(/\s*[,\t|]\s*/);
         const headerCells = splitRow(lines[0]).map(h => h.toLowerCase().trim());
 
         // Detect header by checking for known column names
-        const knownCols = ['post', 'position', 'pos', 'name', 'horse', 'odds', 'morning line odds', 'status', 'longshot'];
+        const knownCols = ['post', 'position', 'pos', '#', 'name', 'horse', 'contestant', 'odds', 'morning line odds', 'status', 'longshot', 'long', 'ls'];
         const looksLikeHeader = headerCells.some(c => knownCols.includes(c));
 
         // Build column map
@@ -726,14 +751,22 @@
                 else if (h === 'status') cols.status = i;
                 else if (h === 'longshot' || h === 'long' || h === 'ls') cols.longshot = i;
             });
-            if (cols.id === undefined || cols.name === undefined || cols.odds === undefined) {
-                errors.push('Header detected but missing required columns. Need at least position, name/horse, odds.');
-                return { rows, errors, skipped };
+            if (cols.id === undefined || cols.odds === undefined) {
+                errors.push('Header detected but missing required columns. Need at least position and odds.');
+                return { rows, errors, skipped, mode: 'full' };
             }
         } else {
-            cols = { id: 0, name: 1, odds: 2, longshot: 3 };
+            // No header — guess by column count: 2 cells = odds-only, 3+ = full
+            const firstRowCells = splitRow(lines[0]);
+            if (firstRowCells.length === 2) {
+                cols = { id: 0, odds: 1 };
+            } else {
+                cols = { id: 0, name: 1, odds: 2, longshot: 3 };
+            }
         }
 
+        // Mode: odds-only when name column is absent
+        const mode = (cols.name === undefined) ? 'odds-only' : 'full';
         const dataLines = looksLikeHeader ? lines.slice(1) : lines;
 
         dataLines.forEach((line, i) => {
@@ -742,20 +775,20 @@
 
             const status = cols.status !== undefined ? (cells[cols.status] || '').trim() : '';
             if (/scratched/i.test(status)) {
-                skipped.push(`#${cells[cols.id]} ${cells[cols.name]} (scratched)`);
+                skipped.push(`#${cells[cols.id]} (scratched)`);
                 return;
             }
 
             const id = parseInt(cells[cols.id], 10);
-            const name = (cells[cols.name] || '').trim();
             const odds = (cells[cols.odds] || '').trim();
+            const name = cols.name !== undefined ? (cells[cols.name] || '').trim() : '';
             const longshotCell = cols.longshot !== undefined ? (cells[cols.longshot] || '').toLowerCase().trim() : '';
 
             if (!Number.isFinite(id) || id <= 0) {
                 errors.push(`Line ${lineNum}: bad position "${cells[cols.id]}"`);
                 return;
             }
-            if (!name) {
+            if (mode === 'full' && !name) {
                 errors.push(`Line ${lineNum}: missing name`);
                 return;
             }
@@ -764,9 +797,8 @@
                 return;
             }
 
-            // Normalize odds to slash form
             const normalizedOdds = odds.replace(/\s+/g, '').replace('-', '/');
-            // Auto-flag longshot: explicit column wins; else compute from odds (15:1+)
+            // Always recompute longshot from new odds unless explicit column was provided
             let isLongshot;
             if (longshotCell) {
                 isLongshot = ['yes', 'y', 'true', '1', 'longshot', 'long', 'ls'].includes(longshotCell);
@@ -774,10 +806,12 @@
                 const m = normalizedOdds.match(/^(\d+)\/(\d+)$/);
                 isLongshot = m ? (parseInt(m[1], 10) / parseInt(m[2], 10)) >= 15 : false;
             }
-            rows.push({ id, name, odds: normalizedOdds, isLongshot });
+            const row = { id, odds: normalizedOdds, isLongshot };
+            if (mode === 'full') row.name = name;
+            rows.push(row);
         });
 
-        return { rows, errors, skipped };
+        return { rows, errors, skipped, mode };
     }
 
     // ----- Utils -----
