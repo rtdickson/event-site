@@ -224,6 +224,8 @@
                 ? renderWinnerBanner(ranked[0], config, contestantsById)
                 : '';
 
+            const auditBadge = renderAuditBadge();
+
             container.innerHTML = `
                 ${winnerBanner}
                 <h3 class="pool-entries-heading">${hasResults ? 'Standings' : 'Entries so far'} (${snap.size})</h3>
@@ -234,11 +236,57 @@
                 </div>
                 <div class="pool-entries-list">${rows}</div>
                 ${hasResults ? '' : '<p class="pool-fineprint" style="margin-top:8px;">Tap a name to see their picks. Potential purse = what each player would win if every pick on their slip hits. Odds are rough — derived from morning-line probabilities.</p>'}
+                ${auditBadge}
             `;
+            wireAuditBadge();
         } catch (err) {
             console.error('Error loading entries:', err);
             container.innerHTML = '<p style="color:red;">Could not load entries.</p>';
         }
+    }
+
+    function renderAuditBadge() {
+        const seal = activeEvent && activeEvent.auditSeal;
+        if (!seal || !seal.hash) return '';
+        const sealedDisplay = seal.sealedAtIso
+            ? new Date(seal.sealedAtIso).toLocaleString()
+            : (seal.sealedAt && seal.sealedAt.toDate ? seal.sealedAt.toDate().toLocaleString() : 'unknown');
+        const short = window.PoolAudit ? window.PoolAudit.shortHash(seal.hash) : seal.hash.slice(0, 16);
+        return `
+            <div class="pool-audit-badge" id="pool-audit-badge">
+                <div class="pool-audit-line">
+                    🔒 <strong>Audited by Claude</strong> — ${seal.entryCount} entries sealed at ${escapeHtml(sealedDisplay)}
+                </div>
+                <div class="pool-audit-hash-line">
+                    SHA-256 <code>${escapeHtml(short)}</code>
+                    · <a href="${escapeHtml(seal.url)}" target="_blank" rel="noopener">snapshot</a>
+                    · <button type="button" class="pool-audit-verify-btn" id="pool-audit-verify-btn">Verify integrity</button>
+                </div>
+                <div class="pool-audit-result" id="pool-audit-result"></div>
+            </div>
+        `;
+    }
+
+    function wireAuditBadge() {
+        const btn = document.getElementById('pool-audit-verify-btn');
+        if (!btn) return;
+        btn.addEventListener('click', async () => {
+            const result = document.getElementById('pool-audit-result');
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = 'Verifying…';
+            try {
+                const v = await window.PoolAudit.verifySeal(activeEvent);
+                result.className = 'pool-audit-result ' + (v.ok ? 'ok' : 'fail');
+                result.textContent = v.message;
+            } catch (e) {
+                result.className = 'pool-audit-result fail';
+                result.textContent = 'Verification error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
+        });
     }
 
     // Big celebratory banner shown above the standings once results are in.

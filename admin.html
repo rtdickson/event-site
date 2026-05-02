@@ -20,6 +20,7 @@
 
     <!-- Application Scripts -->
     <script src="pool-config.js"></script>
+    <script src="pool-audit.js"></script>
     <script src="script-twilio.js"></script>
     <script src="script-admin.js"></script>
     <script src="pool-admin.js"></script>
@@ -309,6 +310,14 @@
                                     <h3>Pool Insights</h3>
                                     <p class="pool-admin-help">Fun stats across all entries. Click any line to copy it for a broadcast.</p>
                                     <div id="pool-insights-list">Loading…</div>
+                                </div>
+
+                                <div class="pool-admin-block pool-audit-block">
+                                    <h3>Audit Seal</h3>
+                                    <p class="pool-admin-help">Cryptographically lock the current entries into a public, downloadable snapshot. Anyone can verify nothing was changed afterward. Re-seal anytime; latest seal wins.</p>
+                                    <div id="pool-audit-status">Not sealed yet.</div>
+                                    <button type="button" id="pool-seal-btn" class="pool-primary-btn" style="width:auto; padding:8px 16px; margin-top:8px;">Seal Entries Now</button>
+                                    <p id="pool-seal-msg" class="pool-admin-help"></p>
                                 </div>
 
                                 <div class="pool-admin-block pool-broadcast-block">

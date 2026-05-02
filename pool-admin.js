@@ -123,7 +123,59 @@
         renderResultsForm();
         renderStandings();
         renderInsights();
+        renderAuditSeal();
         renderBroadcast();
+    }
+
+    function renderAuditSeal() {
+        const status = document.getElementById('pool-audit-status');
+        const btn = document.getElementById('pool-seal-btn');
+        const msg = document.getElementById('pool-seal-msg');
+        if (!status || !btn) return;
+
+        const seal = currentPoolEvent && currentPoolEvent.auditSeal;
+        if (seal && seal.hash) {
+            const sealedDisplay = seal.sealedAtIso
+                ? new Date(seal.sealedAtIso).toLocaleString()
+                : (seal.sealedAt && seal.sealedAt.toDate ? seal.sealedAt.toDate().toLocaleString() : 'unknown');
+            status.innerHTML = `
+                <div class="pool-audit-current">
+                    🔒 <strong>Sealed</strong> at ${escapeHtml(sealedDisplay)} · ${seal.entryCount} entries
+                    <div class="pool-audit-hash">SHA-256: <code>${escapeHtml(seal.hash)}</code></div>
+                    <a href="${escapeHtml(seal.url)}" target="_blank" rel="noopener">View snapshot JSON →</a>
+                </div>
+            `;
+            btn.textContent = 'Re-seal Entries';
+        } else {
+            status.textContent = 'Not sealed yet.';
+            btn.textContent = 'Seal Entries Now';
+        }
+
+        if (btn.dataset.wired) return;
+        btn.dataset.wired = '1';
+        btn.addEventListener('click', async () => {
+            if (!confirm('Snapshot all entries and publish a verifiable hash? Re-seal overwrites the previous seal.')) return;
+            btn.disabled = true;
+            const orig = btn.textContent;
+            btn.textContent = 'Sealing…';
+            msg.textContent = '';
+            try {
+                const result = await window.PoolAudit.sealEntries(currentPoolEventId, currentPoolEvent);
+                msg.textContent = `Sealed ${result.entryCount} entries. Hash: ${result.hash}`;
+                msg.style.color = 'green';
+                // refresh local view
+                const fresh = await db.collection('events').doc(currentPoolEventId).get();
+                if (fresh.exists) currentPoolEvent = fresh.data();
+                renderAuditSeal();
+            } catch (err) {
+                console.error('Seal error:', err);
+                msg.textContent = 'Seal failed: ' + err.message;
+                msg.style.color = 'red';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
+        });
     }
 
     async function renderInsights() {

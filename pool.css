@@ -253,6 +253,89 @@
     font-size: 13px;
 }
 
+/* Audit badge (public) */
+.pool-audit-badge {
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: rgba(0, 0, 0, 0.025);
+    border-radius: 8px;
+    border: 1px solid #e8e8e8;
+    font-size: 13px;
+    color: #555;
+}
+
+.pool-audit-line {
+    margin-bottom: 6px;
+    color: var(--primary-dark, #333);
+}
+
+.pool-audit-hash-line {
+    font-size: 12px;
+    color: #888;
+    word-break: break-all;
+}
+
+.pool-audit-hash-line code {
+    background: #fff;
+    padding: 1px 5px;
+    border-radius: 3px;
+    border: 1px solid #ddd;
+    font-size: 11px;
+}
+
+.pool-audit-verify-btn {
+    background: var(--primary-medium, #888);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 11px;
+    margin-left: 4px;
+}
+
+.pool-audit-result {
+    margin-top: 8px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.pool-audit-result:empty { display: none; }
+
+.pool-audit-result.ok {
+    background: #d4edda;
+    color: #155724;
+}
+
+.pool-audit-result.fail {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+/* Audit block (admin) */
+.pool-audit-current {
+    padding: 8px 10px;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #e0e0e0;
+    margin-bottom: 8px;
+}
+
+.pool-audit-hash {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #888;
+    word-break: break-all;
+}
+
+.pool-audit-hash code {
+    font-size: 11px;
+    background: #f5f5f5;
+    padding: 1px 4px;
+    border-radius: 3px;
+}
+
 /* Winner banner (post-results) */
 .pool-winner-banner {
     background: linear-gradient(135deg, #fff8e1 0%, #f8e8b0 50%, #fff8e1 100%);
