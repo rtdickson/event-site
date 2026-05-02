@@ -30,8 +30,10 @@
 
 .pool-countdown {
     font-size: 14px;
-    color: var(--primary-medium, #666);
-    background: rgba(0, 0, 0, 0.04);
+    font-weight: 600;
+    color: #1a1a1a;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.15);
     padding: 6px 12px;
     border-radius: 16px;
 }
@@ -39,6 +41,7 @@
 .pool-countdown.locked {
     background: #f8d7da;
     color: #721c24;
+    border-color: #f5c6cb;
 }
 
 .pool-lookup {
