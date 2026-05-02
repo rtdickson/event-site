@@ -721,12 +721,49 @@
         }
     }
 
+    // Fallback parser for unstructured / concatenated input (e.g. webpage copy-paste with no delimiters).
+    // Looks for sequences of: digits (post#) + uppercase letter (name start) + ... + X/Y (odds) + optional SCRATCHED.
+    // Always returns odds-only mode. Used when no commas/tabs/pipes/newlines are present in the input.
+    function parseSmashedOddsBlob(raw) {
+        const errors = [];
+        const rows = [];
+        const skipped = [];
+        // Pattern: (post#)(letter)(name+jockey+trainer, no slashes)(numerator)/(denominator)(optional SCRATCHED)
+        // Non-greedy on denominator + lookahead so we don't eat digits from the next post# entry.
+        // Lookahead: end of string, OR a non-digit (whitespace/SCRATCHED), OR digits followed by uppercase (next post + name).
+        const re = /(\d+)[A-Z][^\/]*?(\d+)\/(\d+?)(?=$|\D|\d+[A-Z])(\s*scratched)?/gi;
+        let m;
+        const seen = new Set();
+        while ((m = re.exec(raw)) !== null) {
+            const id = parseInt(m[1], 10);
+            const num = parseInt(m[2], 10);
+            const den = parseInt(m[3], 10);
+            const isScratched = !!m[4];
+            if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(num) || !Number.isFinite(den) || den === 0) continue;
+            if (seen.has(id)) continue; // first match wins per id
+            seen.add(id);
+            if (isScratched) {
+                skipped.push(`#${id} (scratched)`);
+                continue;
+            }
+            const odds = `${num}/${den}`;
+            const isLongshot = (num / den) >= 15;
+            rows.push({ id, odds, isLongshot });
+        }
+        return { rows, errors, skipped, mode: 'odds-only' };
+    }
+
     // CSV parser: header-aware. Maps columns by name (post, name/horse, odds, longshot, status).
     // Modes:
     //   'full' — full import; rows include name (required)
     //   'odds-only' — minimal Post + Odds only; merges into existing horses by id
     // Skips rows where Status contains SCRATCHED. Auto-flags longshots at 15:1+ if no longshot column.
     function parseContestantCsv(raw) {
+        // First: detect concatenated/unstructured paste (no delimiters at all).
+        // If there are no commas, tabs, pipes, or newlines, fall back to smart regex extraction.
+        if (!/[,\t|\n]/.test(raw)) {
+            return parseSmashedOddsBlob(raw);
+        }
         const errors = [];
         const rows = [];
         const skipped = [];
