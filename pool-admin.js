@@ -815,6 +815,28 @@
         }
     }
 
+    // Normalize a single odds string into canonical fractional form ("X/Y").
+    // Accepts: "6/1", "5-2", "EVEN", "6.0" (decimal where .0 means whole odds), "2.5" (= 5/2).
+    // Returns null if unparseable.
+    function normalizeOddsString(input) {
+        if (input === null || input === undefined) return null;
+        const s = String(input).trim().replace(/\s+/g, '');
+        if (!s || s === '—' || s === '-') return null;
+        if (/^even/i.test(s)) return '1/1';
+        if (/^\d+[\/\-]\d+$/.test(s)) return s.replace('-', '/');
+        if (/^\d+(\.\d+)?$/.test(s)) {
+            // Decimal odds: 6.0 → 6/1, 2.5 → 5/2, 14.0 → 14/1
+            const dec = parseFloat(s);
+            if (Number.isInteger(dec)) return dec + '/1';
+            // Reduce X.Y to fraction. Use 100 as denominator base, then GCD-reduce.
+            const num = Math.round(dec * 100);
+            const den = 100;
+            const g = (function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); })(num, den);
+            return (num / g) + '/' + (den / g);
+        }
+        return null;
+    }
+
     // Fallback parser for unstructured / concatenated input (e.g. webpage copy-paste with no delimiters).
     // Looks for sequences of: digits (post#) + uppercase letter (name start) + ... + X/Y (odds) + optional SCRATCHED.
     // Always returns odds-only mode. Used when no commas/tabs/pipes/newlines are present in the input.
@@ -871,16 +893,21 @@
         const knownCols = ['post', 'position', 'pos', '#', 'name', 'horse', 'contestant', 'odds', 'morning line odds', 'status', 'longshot', 'long', 'ls'];
         const looksLikeHeader = headerCells.some(c => knownCols.includes(c));
 
-        // Build column map
+        // Build column map — prefer exact matches over fuzzy so 'Odds' wins over 'OddsDecimal'
         let cols;
         if (looksLikeHeader) {
             cols = {};
+            // First pass: exact matches
             headerCells.forEach((h, i) => {
                 if (h === 'post' || h === 'position' || h === 'pos' || h === '#') cols.id = i;
                 else if (h === 'name' || h === 'horse' || h === 'contestant') cols.name = i;
-                else if (h === 'odds' || /odds/.test(h)) cols.odds = i;
+                else if (h === 'odds') cols.odds = i;
                 else if (h === 'status') cols.status = i;
                 else if (h === 'longshot' || h === 'long' || h === 'ls') cols.longshot = i;
+            });
+            // Second pass: fuzzy fallbacks (only if exact match didn't fill the slot)
+            headerCells.forEach((h, i) => {
+                if (cols.odds === undefined && /odds/.test(h)) cols.odds = i;
             });
             if (cols.id === undefined || cols.odds === undefined) {
                 errors.push('Header detected but missing required columns. Need at least position and odds.');
@@ -923,12 +950,11 @@
                 errors.push(`Line ${lineNum}: missing name`);
                 return;
             }
-            if (!/^\d+\s*[\/\-]\s*\d+$/i.test(odds) && !/^even/i.test(odds)) {
-                errors.push(`Line ${lineNum}: bad odds "${odds}" (expected like 8/1 or 5-2)`);
+            const normalizedOdds = normalizeOddsString(odds);
+            if (!normalizedOdds) {
+                errors.push(`Line ${lineNum}: bad odds "${odds}" (expected 8/1, 5-2, EVEN, or decimal like 6.0 / 2.5)`);
                 return;
             }
-
-            const normalizedOdds = odds.replace(/\s+/g, '').replace('-', '/');
             // Always recompute longshot from new odds unless explicit column was provided
             let isLongshot;
             if (longshotCell) {
