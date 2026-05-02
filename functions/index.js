@@ -426,12 +426,11 @@ async function handlePoolStats(From, activeEvent, res) {
         const byPurse = enriched.slice().sort((a, b) => b.max - a.max);
         const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
         const total = enriched.reduce((s, e) => s + e.max, 0);
-        const topN = Math.min(5, byPurse.length);
 
         let body = `${activeEvent.name} (${enriched.length} ${enriched.length === 1 ? 'player' : 'players'})\n`;
         body += `Combined potential: $${total.toLocaleString()}\n\n`;
-        body += `Top potential purses:\n`;
-        for (let i = 0; i < topN; i++) {
+        body += `Potential purses:\n`;
+        for (let i = 0; i < byPurse.length; i++) {
             const e = byPurse[i];
             body += `${i+1}. ${e.name}: $${e.max.toLocaleString()} (${PoolConfig.formatOddsAgainst(e.prob)})\n`;
         }
