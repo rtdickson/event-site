@@ -147,7 +147,8 @@
                     picks: d.picks || {},
                     locks: d.locks || [],
                     max: PC.maxPossiblePayoff(config, d, contestants),
-                    prob: PC.slipProbability(d, config, contestants)
+                    prob: PC.slipProbability(d, config, contestants),
+                    pnl: PC.computePnL(d, config, contestants)
                 };
             }).filter(e => e.max > 0);
 
@@ -177,6 +178,37 @@
                 lines.push(`🔒 ${parlayCount} ${parlayCount === 1 ? 'player' : 'players'} locked in a parlay bonus.`);
             }
             lines.push(`💰 Average potential purse: $${avg.toLocaleString()}.`);
+
+            // "If real money" lines — group + standout individuals
+            const totalWagered = enriched.reduce((s, e) => s + e.pnl.wagered, 0);
+            const totalEV = enriched.reduce((s, e) => s + e.pnl.ev, 0);
+            const hasResults = !!config.results && PC.scoreSlip(config, { picks: {}, locks: [] }, contestants);
+            const resultsEntered = config.results && Object.values(config.results).some(v => v != null && v !== '');
+
+            lines.push(`💸 If we'd wagered real money: group risks $${totalWagered.toLocaleString()} across all slips.`);
+
+            if (resultsEntered) {
+                const totalReturned = enriched.reduce((s, e) => s + (e.pnl.returned || 0), 0);
+                const groupNet = totalReturned - totalWagered;
+                const sign = groupNet >= 0 ? '+' : '-';
+                lines.push(`💵 Real-money result: group wagered $${totalWagered.toLocaleString()} → returned $${totalReturned.toLocaleString()} → net ${sign}$${Math.abs(groupNet).toLocaleString()}.`);
+
+                const byNet = enriched.slice().sort((a, b) => (b.pnl.net || 0) - (a.pnl.net || 0));
+                const winner = byNet[0];
+                const loser = byNet[byNet.length - 1];
+                lines.push(`📈 Biggest winner (real $): ${winner.name} ${winner.pnl.net >= 0 ? '+' : '-'}$${Math.abs(winner.pnl.net).toLocaleString()}.`);
+                lines.push(`📉 Biggest loser (real $): ${loser.name} ${loser.pnl.net >= 0 ? '+' : '-'}$${Math.abs(loser.pnl.net).toLocaleString()}.`);
+            } else {
+                const sign = totalEV >= 0 ? '+' : '-';
+                lines.push(`📉 Group expected value: ${sign}$${Math.abs(totalEV).toLocaleString()} (gambling math — odds are stacked).`);
+                const byEV = enriched.slice().sort((a, b) => b.pnl.ev - a.pnl.ev);
+                const leastBad = byEV[0];
+                const worst = byEV[byEV.length - 1];
+                const leastBadSign = leastBad.pnl.ev >= 0 ? '+' : '-';
+                const worstSign = worst.pnl.ev >= 0 ? '+' : '-';
+                lines.push(`🎯 Best expected value: ${leastBad.name} at ${leastBadSign}$${Math.abs(leastBad.pnl.ev).toLocaleString()}.`);
+                lines.push(`🪦 Worst expected value: ${worst.name} at ${worstSign}$${Math.abs(worst.pnl.ev).toLocaleString()}.`);
+            }
 
             container.innerHTML = '<ul class="pool-insights">'
                 + lines.map(line =>

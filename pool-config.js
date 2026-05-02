@@ -311,6 +311,100 @@
         return Math.round(o).toLocaleString() + ' to 1';
     }
 
+    // ----- Real-money simulation: "if we'd actually wagered" -----
+    // Returns { wagered, expectedReturn, ev, returned, net } for an entry.
+    //   wagered: sum of stakes across answered questions (incl. parlay legs once)
+    //   expectedReturn: sum of P(hit) × payoff for each pick (rough)
+    //   ev: expectedReturn - wagered (always negative-ish for honest odds)
+    //   returned: actual payout if results are in (else null)
+    //   net: returned - wagered (else null)
+    function computePnL(entry, poolConfig, contestants) {
+        const cById = {};
+        (contestants || []).forEach(c => { cById[Number(c.id)] = c; });
+        const picks = (entry && entry.picks) || {};
+        const locks = (entry && entry.locks) || [];
+        const questions = (poolConfig && poolConfig.questions) || [];
+
+        let wagered = 0;
+        let expectedReturn = 0;
+
+        for (const q of questions) {
+            const v = picks[q.id];
+            if (v === null || v === undefined || v === '') continue;
+            if (Array.isArray(v) && v.some(x => x == null || x === '')) continue;
+
+            const stake = effectiveStake(q, poolConfig);
+            wagered += stake;
+
+            let pHit = 0;
+            let payoff = 0;
+            switch (q.kind) {
+                case 'pickContestant': {
+                    const c = cById[Number(v)];
+                    const odds = parseOdds(c && c.odds);
+                    pHit = 1 / (odds.decimal + 1);
+                    if (q.id === 'place' || q.resultKey === 'place') pHit = Math.min(0.5, pHit * 2);
+                    else if (q.id === 'show' || q.resultKey === 'show') pHit = Math.min(0.65, pHit * 3);
+                    payoff = payoffIfHit(q, stake, odds.decimal);
+                    break;
+                }
+                case 'pickLongshot': {
+                    const c = cById[Number(v)];
+                    pHit = Math.min(0.65, (1 / (parseOdds(c && c.odds).decimal + 1)) * 3);
+                    payoff = payoffIfHit(q, stake);
+                    break;
+                }
+                case 'orderedTriple': {
+                    pHit = v.reduce((acc, id) => acc * (1 / (parseOdds((cById[Number(id)] || {}).odds).decimal + 1)), 1);
+                    payoff = payoffIfHit(q, stake);
+                    break;
+                }
+                case 'unorderedTriple': {
+                    pHit = Math.min(1, 6 * v.reduce((acc, id) => acc * (1 / (parseOdds((cById[Number(id)] || {}).odds).decimal + 1)), 1));
+                    payoff = payoffIfHit(q, stake);
+                    break;
+                }
+                case 'overUnder':
+                case 'yesNo':
+                    pHit = 0.5;
+                    payoff = stake;
+                    break;
+            }
+            expectedReturn += pHit * payoff;
+        }
+
+        // Parlay leg: extra stake at risk for the bonus (modeled as +stake wagered, +parlay-bonus expected return weighted by joint prob)
+        if (locks.length >= 2) {
+            const validLockedQs = locks.map(qid => questions.find(q => q.id === qid)).filter(q => q && q.lockable);
+            if (validLockedQs.length === locks.length) {
+                const stake = effectiveStake(validLockedQs[0], poolConfig);
+                wagered += stake; // additional stake on the parlay
+                const jointProb = locks.reduce((acc, qid) => {
+                    const c = cById[Number(picks[qid])];
+                    return acc * (1 / (parseOdds(c && c.odds).decimal + 1));
+                }, 1);
+                const product = locks.reduce((acc, qid) => {
+                    const c = cById[Number(picks[qid])];
+                    return acc * parseOdds(c && c.odds).decimal;
+                }, 1);
+                expectedReturn += jointProb * Math.round(stake * product);
+            }
+        }
+
+        const ev = expectedReturn - wagered;
+
+        // Actual returned/net only if results are in
+        let returned = null;
+        let net = null;
+        if (poolConfig && poolConfig.results) {
+            const score = scoreSlip(poolConfig, entry, contestants);
+            returned = score.bankroll;
+            net = returned - wagered;
+        }
+
+        return { wagered, expectedReturn: Math.round(expectedReturn), ev: Math.round(ev), returned, net };
+    }
+
     // ----- "Max possible" — used as the carrot on the form -----
     // For each question with a pick, what's the payoff if it hits?
     function maxPossiblePayoff(poolConfig, entry, contestants) {
@@ -388,6 +482,7 @@
         slipProbability,
         impliedOddsAgainst,
         formatOddsAgainst,
+        computePnL,
         canLock,
         isPoolOpen
     };
