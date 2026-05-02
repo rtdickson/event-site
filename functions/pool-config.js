@@ -311,6 +311,37 @@
         return Math.round(o).toLocaleString() + ' to 1';
     }
 
+    // ----- Tiebreaker: how close was an entry's trifecta to the actual top 3? -----
+    // Returns { setMatch, exactMatch } where:
+    //   setMatch — count of picked horses that finished in the actual top 3 (any order), 0-3
+    //   exactMatch — count of picked horses in the exact correct finish position, 0-3
+    // Used as secondary sort keys when bankrolls tie.
+    function triCloseness(entry, poolConfig) {
+        const result = { setMatch: 0, exactMatch: 0 };
+        if (!entry || !poolConfig) return result;
+        const picks = entry.picks || {};
+        const questions = poolConfig.questions || [];
+        const results = poolConfig.results || {};
+
+        // Find the trifecta question
+        const triQ = questions.find(q => q.kind === 'orderedTriple' || q.kind === 'unorderedTriple');
+        if (!triQ) return result;
+
+        const triPick = picks[triQ.id];
+        const triResult = results[triQ.id];
+        if (!Array.isArray(triPick) || !Array.isArray(triResult)) return result;
+
+        const pickIds = triPick.map(Number).filter(n => !isNaN(n));
+        const resultIds = triResult.map(Number).filter(n => !isNaN(n));
+        const resultSet = new Set(resultIds);
+
+        for (let i = 0; i < pickIds.length; i++) {
+            if (resultSet.has(pickIds[i])) result.setMatch++;
+            if (resultIds[i] !== undefined && pickIds[i] === resultIds[i]) result.exactMatch++;
+        }
+        return result;
+    }
+
     // ----- Real-money simulation: "if we'd actually wagered" -----
     // Returns { wagered, expectedReturn, ev, returned, net } for an entry.
     //   wagered: sum of stakes across answered questions (incl. parlay legs once)
@@ -483,6 +514,7 @@
         impliedOddsAgainst,
         formatOddsAgainst,
         computePnL,
+        triCloseness,
         canLock,
         isPoolOpen
     };

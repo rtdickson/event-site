@@ -732,21 +732,29 @@
             const ranked = snap.docs.map(doc => {
                 const entry = doc.data();
                 const score = window.PoolConfig.scoreSlip(currentPoolEvent.poolConfig, entry, contestants);
-                return { name: entry.name || 'Unknown', phone: entry.phone, score };
-            }).sort((a, b) => b.score.bankroll - a.score.bankroll);
+                const tieBreak = window.PoolConfig.triCloseness(entry, currentPoolEvent.poolConfig);
+                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak };
+            }).sort((a, b) => {
+                if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
+                if (b.tieBreak.setMatch !== a.tieBreak.setMatch) return b.tieBreak.setMatch - a.tieBreak.setMatch;
+                return b.tieBreak.exactMatch - a.tieBreak.exactMatch;
+            });
 
             if (ranked.length === 0) {
                 container.innerHTML = '<p class="pool-admin-help">No entries to score.</p>';
                 return;
             }
 
-            container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4><table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th><th>Parlay</th></tr></thead><tbody>'
+            container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4>'
+                + '<p class="pool-admin-help" style="margin:0 0 8px;">Ties broken by trifecta closeness (set match, then exact match).</p>'
+                + '<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th><th>Parlay</th><th>Tri match</th></tr></thead><tbody>'
                 + ranked.map((r, i) => `
                     <tr>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(r.name)}</td>
                         <td><strong>$${r.score.bankroll}</strong></td>
                         <td>${r.score.parlay.attempted ? (r.score.parlay.hit ? `✓ +$${r.score.parlay.bonus}` : '✗') : ''}</td>
+                        <td>${r.tieBreak.setMatch}/3 set, ${r.tieBreak.exactMatch}/3 exact</td>
                     </tr>
                 `).join('') + '</tbody></table>';
         } catch (err) {

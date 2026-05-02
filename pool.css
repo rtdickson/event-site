@@ -253,6 +253,77 @@
     font-size: 13px;
 }
 
+/* Winner banner (post-results) */
+.pool-winner-banner {
+    background: linear-gradient(135deg, #fff8e1 0%, #f8e8b0 50%, #fff8e1 100%);
+    border: 2px solid var(--accent, #d4a843);
+    border-radius: 12px;
+    padding: 18px 22px;
+    margin-bottom: 16px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 16px;
+    align-items: center;
+    box-shadow: 0 4px 16px rgba(212, 168, 67, 0.25);
+}
+
+.pool-winner-trophy {
+    font-size: 48px;
+    line-height: 1;
+}
+
+.pool-winner-text { line-height: 1.4; }
+
+.pool-winner-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #8b6914;
+    font-weight: 600;
+}
+
+.pool-winner-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    color: var(--primary-dark, #333);
+    margin: 2px 0;
+}
+
+.pool-winner-bankroll {
+    font-size: 14px;
+    color: #555;
+}
+
+.pool-winner-bankroll strong {
+    color: var(--accent, #b8860b);
+    font-size: 17px;
+}
+
+.pool-winner-results {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(212, 168, 67, 0.3);
+    font-size: 13px;
+    color: #333;
+}
+
+.pool-result-pos {
+    font-weight: 600;
+    color: var(--accent, #b8860b);
+    margin-right: 4px;
+}
+
+@media (max-width: 480px) {
+    .pool-winner-banner { padding: 14px; gap: 12px; }
+    .pool-winner-trophy { font-size: 36px; }
+    .pool-winner-name { font-size: 20px; }
+    .pool-winner-results { gap: 10px; font-size: 12px; }
+}
+
 /* Event list (index page) */
 #events-list-container {
     display: grid;

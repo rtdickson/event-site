@@ -175,13 +175,20 @@
                 const score = hasResults ? window.PoolConfig.scoreSlip(config, data, contestants) : null;
                 const max = hasResults ? null : window.PoolConfig.maxPossiblePayoff(config, data, contestants);
                 const slipProb = hasResults ? null : window.PoolConfig.slipProbability(data, config, contestants);
-                return { data, displayName, score, max, slipProb };
+                const tieBreak = hasResults ? window.PoolConfig.triCloseness(data, config) : null;
+                return { data, displayName, score, max, slipProb, tieBreak };
             });
-            // Sort by bankroll descending if results, else by max descending
+            // Sort:
+            // - With results: bankroll desc, then trifecta-closeness (set match, then exact match) desc
+            // - Without results: max possible desc
             ranked.sort((a, b) => {
-                const av = a.score ? a.score.bankroll : a.max;
-                const bv = b.score ? b.score.bankroll : b.max;
-                return (bv || 0) - (av || 0);
+                if (hasResults) {
+                    const ar = a.score.bankroll, br = b.score.bankroll;
+                    if (br !== ar) return br - ar;
+                    if (b.tieBreak.setMatch !== a.tieBreak.setMatch) return b.tieBreak.setMatch - a.tieBreak.setMatch;
+                    return b.tieBreak.exactMatch - a.tieBreak.exactMatch;
+                }
+                return (b.max || 0) - (a.max || 0);
             });
 
             // Total potential purse across all entries (pre-results only)
@@ -213,8 +220,12 @@
             const totalLine = (!hasResults && totalPurse > 0)
                 ? `<div class="pool-total-purse">Combined potential purse across ${ranked.length} ${ranked.length === 1 ? 'player' : 'players'}: <strong>$${totalPurse.toLocaleString()}</strong></div>`
                 : '';
+            const winnerBanner = hasResults && ranked.length > 0
+                ? renderWinnerBanner(ranked[0], config, contestantsById)
+                : '';
 
             container.innerHTML = `
+                ${winnerBanner}
                 <h3 class="pool-entries-heading">${hasResults ? 'Standings' : 'Entries so far'} (${snap.size})</h3>
                 ${totalLine}
                 <div class="pool-entries-header-row">
@@ -228,6 +239,46 @@
             console.error('Error loading entries:', err);
             container.innerHTML = '<p style="color:red;">Could not load entries.</p>';
         }
+    }
+
+    // Big celebratory banner shown above the standings once results are in.
+    function renderWinnerBanner(winner, config, contestantsById) {
+        const results = config.results || {};
+        const questions = config.questions || [];
+
+        // Find win/place/show contestant ids from the results
+        const winQ = questions.find(q => q.kind === 'pickContestant' && (q.id === 'win' || q.resultKey === 'win'));
+        const placeQ = questions.find(q => q.kind === 'pickContestant' && (q.id === 'place' || q.resultKey === 'place'));
+        const showQ = questions.find(q => q.kind === 'pickContestant' && (q.id === 'show' || q.resultKey === 'show'));
+
+        const horseLabel = (id) => {
+            const c = contestantsById[Number(id)];
+            return c ? `#${c.id} ${escapeHtml(c.name)}` : `#${id}`;
+        };
+
+        const winId = winQ ? results[winQ.id] : null;
+        const placeId = placeQ ? results[placeQ.id] : null;
+        const showId = showQ ? results[showQ.id] : null;
+
+        const resultsLine = (winId || placeId || showId)
+            ? `<div class="pool-winner-results">
+                ${winId ? `<span><span class="pool-result-pos">1st</span> ${horseLabel(winId)}</span>` : ''}
+                ${placeId ? `<span><span class="pool-result-pos">2nd</span> ${horseLabel(placeId)}</span>` : ''}
+                ${showId ? `<span><span class="pool-result-pos">3rd</span> ${horseLabel(showId)}</span>` : ''}
+              </div>`
+            : '';
+
+        return `
+            <div class="pool-winner-banner">
+                <div class="pool-winner-trophy">🏆</div>
+                <div class="pool-winner-text">
+                    <div class="pool-winner-label">${escapeHtml(activeEvent.name)} Winner</div>
+                    <div class="pool-winner-name">${escapeHtml(winner.displayName)}</div>
+                    <div class="pool-winner-bankroll">Bankroll: <strong>$${winner.score.bankroll.toLocaleString()}</strong></div>
+                </div>
+                ${resultsLine}
+            </div>
+        `;
     }
 
     function renderEntryDetail(data, config, contestantsById, score) {
