@@ -625,8 +625,9 @@
         if (!el) return;
         const closesAt = activeEvent.poolConfig.closesAt;
         if (!closesAt || !closesAt.toDate) return;
+        const GRACE_MS = 60 * 1000;
         const update = () => {
-            const ms = closesAt.toDate().getTime() - Date.now();
+            const ms = closesAt.toDate().getTime() + GRACE_MS - Date.now();
             if (ms <= 0) {
                 el.textContent = 'Picks locked';
                 el.classList.add('locked');

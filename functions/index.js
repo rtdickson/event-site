@@ -845,6 +845,7 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
                   : null;
 
     const responseText = (Body || '').trim().toLowerCase();
+    const CLOSE_GRACE_MS = 60 * 1000; // matches pool-config.js — 6:00pm close → real lock 6:00:59
 
     // Help / status text
     if (responseText === 'help' || responseText === '') {
@@ -856,7 +857,7 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
         return;
     }
 
-    if (closesMs && now > closesMs) {
+    if (closesMs && now >= closesMs + CLOSE_GRACE_MS) {
         await twilioClient.messages.create({
             body: `Picks for ${eventName} are locked. Standings will post after the race at https://75pinegrove.com.`,
             from: process.env.TWILIO_PHONE_NUMBER,

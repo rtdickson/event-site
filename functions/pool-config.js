@@ -486,6 +486,10 @@
         return !!(question && question.lockable);
     }
 
+    // 60-second grace period after configured close — so a "6:00pm close" gives
+    // the full 6:00 minute (locks at 6:00:59.999) rather than the instant 6:00:00 hits.
+    const CLOSE_GRACE_MS = 60 * 1000;
+
     function isPoolOpen(poolConfig, now) {
         if (!poolConfig) return false;
         const closesAt = poolConfig.closesAt;
@@ -493,7 +497,7 @@
         const closesMs = closesAt.toMillis ? closesAt.toMillis()
                        : closesAt.seconds ? closesAt.seconds * 1000
                        : new Date(closesAt).getTime();
-        return (now || Date.now()) < closesMs;
+        return (now || Date.now()) < closesMs + CLOSE_GRACE_MS;
     }
 
     // ----- Export -----
