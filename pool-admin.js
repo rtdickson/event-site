@@ -728,6 +728,27 @@
         if (finishInput && currentPoolEvent.poolConfig.fullFinish) {
             finishInput.value = (currentPoolEvent.poolConfig.fullFinish || []).join(', ');
         }
+        const prefillBtn = document.getElementById('pool-prefill-finish-btn');
+        if (prefillBtn && !prefillBtn.dataset.wired) {
+            prefillBtn.dataset.wired = '1';
+            prefillBtn.addEventListener('click', () => {
+                const results = currentPoolEvent.poolConfig.results || {};
+                const top3 = [results.win, results.place, results.show].filter(v => v != null && v !== '');
+                if (top3.length === 0) {
+                    finishMsg.textContent = 'No win/place/show results entered yet.';
+                    finishMsg.style.color = 'red';
+                    return;
+                }
+                const existing = (finishInput.value.trim()) ? finishInput.value.split(/\s*[,\n]\s*/).map(s => parseInt(s, 10)).filter(Number.isFinite) : [];
+                if (existing.length > 0 && !confirm('Replace current finish order with top-3 prefill plus what you add after?')) return;
+                finishInput.value = top3.join(', ') + ', ';
+                finishInput.focus();
+                finishInput.setSelectionRange(finishInput.value.length, finishInput.value.length);
+                finishMsg.textContent = `Prefilled top 3. Add the rest after the comma.`;
+                finishMsg.style.color = '#666';
+            });
+        }
+
         if (finishBtn && !finishBtn.dataset.wired) {
             finishBtn.dataset.wired = '1';
             finishBtn.addEventListener('click', async () => {

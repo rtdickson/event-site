@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How the Math Works — Pine Grove Gatherings</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="pool.css">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display&family=Roboto:wght@300&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="password-prompt" style="display: none;">
+        <h2>Enter Password</h2>
+        <input type="password" id="password-input" placeholder="Password">
+        <br>
+        <button type="button">Submit</button>
+        <p id="password-error" style="color: red;"></p>
+    </div>
+    <div id="main-content" style="display: none;">
+        <header>
+            <img src="images/banner.jpg" alt="Cozy Dinner" class="banner">
+            <h1>Pine Grove Gatherings</h1>
+            <nav>
+                <a href="index.html">All Events</a>
+                <a href="admin.html" class="admin-link">Admin (Private)</a>
+                <a href="gallery.html">Picture Gallery</a>
+            </nav>
+        </header>
+        <main>
+            <article class="math-page">
+                <h2>How the Math Works</h2>
+                <p class="math-intro">Everything that decides a pool — payouts, parlay bonuses, and tiebreakers — is published here so the standings are fully auditable. <a href="javascript:history.back()">← Back</a></p>
+
+                <section class="math-section">
+                    <h3>1. Payouts per pick</h3>
+                    <p>Each pick has a fixed stake (set per pool, e.g. $1,000 fun money). Payoff depends on the pick type:</p>
+                    <table class="math-table">
+                        <thead><tr><th>Pick type</th><th>Payoff if hit</th><th>Example at $1,000 stake</th></tr></thead>
+                        <tbody>
+                            <tr><td>Win / Place / Show</td><td>stake × decimal odds (morning line)</td><td>$1,000 on a 6/1 horse → $6,000</td></tr>
+                            <tr><td>Trifecta (1-2-3 in order)</td><td>50 × stake</td><td>$50,000 if exact</td></tr>
+                            <tr><td>Top-3 Box (any order)</td><td>10 × stake</td><td>$10,000 if all 3 in top 3</td></tr>
+                            <tr><td>Longshot top-3</td><td>5 × stake</td><td>$5,000 bonus</td></tr>
+                            <tr><td>Over/Under, Yes/No props</td><td>even money (1 × stake)</td><td>$1,000</td></tr>
+                        </tbody>
+                    </table>
+                    <p class="math-note">Odds are <em>pari-mutuel</em> — payouts use the odds at race time (last imported), not when you locked in your pick. Same as the actual track.</p>
+                </section>
+
+                <section class="math-section">
+                    <h3>2. Parlay bonus</h3>
+                    <p>You can lock 2 or 3 of your single-horse picks (Win, Place, or Show) into a parlay. If <strong>all locked picks hit</strong>:</p>
+                    <p class="math-formula">bonus = stake × (odds₁ × odds₂ × odds₃)</p>
+                    <p>Example: lock Win at 8/1 and Place at 5/2 with $1,000 stake. Both hit → bonus = 1,000 × 8 × 2.5 = <strong>$20,000</strong>. Miss any leg and the bonus is zero (individual picks still pay normally).</p>
+                </section>
+
+                <section class="math-section">
+                    <h3>3. Bankroll = total winnings</h3>
+                    <p>Add up payouts across all picks that hit, plus any parlay bonus. That's your bankroll. Highest bankroll wins the pool.</p>
+                </section>
+
+                <section class="math-section">
+                    <h3>4. Tiebreaker ladder</h3>
+                    <p>If two or more players tie on bankroll, the tiebreaker cascade kicks in. Each tier resolves first; if still tied, falls through to the next tier.</p>
+
+                    <div class="math-tier"><strong>Tier 1 — Trifecta position error</strong> (lowest wins)
+                        <p>For each of your 3 trifecta picks: <code>error = |slot − actual_finish_position|</code>. Slot is 1, 2, or 3 (where you put the horse). Actual finish position is 1 through N (the whole field). Scratched/DNF horses get a 20-point penalty. Sum the three errors.</p>
+                    </div>
+
+                    <div class="math-tier"><strong>Tier 2 — Exact position hits</strong> (most wins)
+                        <p>Count how many of your 3 trifecta picks finished in the <em>exact</em> position you predicted. Range 0–3.</p>
+                    </div>
+
+                    <div class="math-tier"><strong>Tier 3 — Exacta error</strong> (lowest wins)
+                        <p>Same calculation as Tier 1 but only for your <em>first two</em> trifecta picks. Tighter test of who came closer on the top-2 finishers.</p>
+                    </div>
+
+                    <div class="math-tier"><strong>Tier 4 — Coin flip</strong>
+                        <p>If still tied after all three tiers, the system surfaces a coin flip — the admin makes a manual call.</p>
+                    </div>
+                </section>
+
+                <section id="math-worked-example" class="math-section" style="display:none;">
+                    <h3>5. Worked example — this pool</h3>
+                    <div id="math-worked-content">Loading…</div>
+                </section>
+
+                <section class="math-section">
+                    <h3>6. Audit seal</h3>
+                    <p>Just before the race lock, the admin "seals" all entries. We compute a SHA-256 hash of the entry snapshot (canonical JSON, sorted keys, no timestamps) and publish it. Anyone can click <strong>Verify integrity</strong> on the event page to re-fetch the snapshot, recompute the hash, and confirm nothing was changed after seal time.</p>
+                    <p class="math-note">If picks were tampered with after sealing, the hash wouldn't match — verify would fail. The proof requires no trust in the platform or the admin.</p>
+                </section>
+            </article>
+        </main>
+        <footer>
+            <p>Private event | Pine Grove Gatherings</p>
+        </footer>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="theme-loader.js"></script>
+    <script src="auth.js"></script>
+    <script src="pool-config.js"></script>
+    <script src="script-math.js"></script>
+</body>
+</html>

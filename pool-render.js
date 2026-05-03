@@ -252,6 +252,9 @@
                 : '';
 
             const auditBadge = renderAuditBadge();
+            const mathLink = hasResults
+                ? `<p class="pool-math-link"><a href="how-the-math-works.html?event=${activeEvent._id || ''}">📐 How is this calculated? See the math →</a></p>`
+                : '';
             const tieAnalysis = (hasResults && tiedIndexes.has(0))
                 ? renderTieAnalysis(ranked)
                 : '';
@@ -267,6 +270,7 @@
                 </div>
                 <div class="pool-entries-list">${rows}</div>
                 ${hasResults ? '' : '<p class="pool-fineprint" style="margin-top:8px;">Tap a name to see their picks. Potential purse = what each player would win if every pick on their slip hits. Odds are rough — derived from morning-line probabilities.</p>'}
+                ${mathLink}
                 ${auditBadge}
             `;
             wireAuditBadge();
