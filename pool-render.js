@@ -178,15 +178,20 @@
                 const tieBreak = hasResults ? window.PoolConfig.triCloseness(data, config) : null;
                 return { data, displayName, score, max, slipProb, tieBreak };
             });
-            // Sort:
-            // - With results: bankroll desc, then trifecta-closeness (set match, then exact match) desc
-            // - Without results: max possible desc
+            // Sort cascade (with results):
+            //   1. Bankroll desc
+            //   2. Tier 1 — trifecta positional error sum (lower wins)
+            //   3. Tier 2 — exact position hits (higher wins)
+            //   4. Tier 3 — exacta positional error (lower wins)
+            //   5. Tie remains → coin flip
+            // Falls back to legacy setMatch/exactMatch if fullFinish isn't entered yet.
             ranked.sort((a, b) => {
                 if (hasResults) {
-                    const ar = a.score.bankroll, br = b.score.bankroll;
-                    if (br !== ar) return br - ar;
-                    if (b.tieBreak.setMatch !== a.tieBreak.setMatch) return b.tieBreak.setMatch - a.tieBreak.setMatch;
-                    return b.tieBreak.exactMatch - a.tieBreak.exactMatch;
+                    if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
+                    if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
+                    if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
+                    if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;
+                    return 0; // coin flip territory
                 }
                 return (b.max || 0) - (a.max || 0);
             });
@@ -213,7 +218,9 @@
                     ? `<div class="pool-entry-odds">odds ${window.PoolConfig.formatOddsAgainst(slipProb)}</div>`
                     : '';
                 const tiebreakStr = (hasResults && tiedIndexes.has(i) && tieBreak)
-                    ? `<div class="pool-entry-tiebreak">tri: ${tieBreak.setMatch}/3 set, ${tieBreak.exactMatch}/3 exact</div>`
+                    ? (tieBreak.usedFullFinish
+                        ? `<div class="pool-entry-tiebreak">tri error: ${tieBreak.tier1} · exacta err: ${tieBreak.tier3} · exact: ${tieBreak.tier2}/3</div>`
+                        : `<div class="pool-entry-tiebreak">tri: ${tieBreak.setMatch}/3 set, ${tieBreak.exactMatch}/3 exact</div>`)
                     : '';
                 const amountStr = hasResults
                     ? `<strong>$${score.bankroll.toLocaleString()}</strong>${tiebreakStr}`
@@ -324,36 +331,57 @@
         const runnerUp = tiedAtTop[1];
         const wTie = winner.tieBreak;
         const rTie = runnerUp.tieBreak;
+        const useFull = wTie.usedFullFinish;
 
-        // Determine which level of the cascade resolved it
+        // Determine which tier resolved it (and warn on coin-flip)
         let resolvedBy = '';
-        if (wTie.setMatch !== rTie.setMatch) {
-            resolvedBy = `more right horses in the trifecta (${wTie.setMatch}/3 vs ${rTie.setMatch}/3)`;
-        } else if (wTie.exactMatch !== rTie.exactMatch) {
-            resolvedBy = `more horses in their correct finishing position (${wTie.exactMatch}/3 vs ${rTie.exactMatch}/3 exact match)`;
+        let coinFlip = false;
+        if (useFull) {
+            if (wTie.tier1 !== rTie.tier1) {
+                resolvedBy = `lowest trifecta position-error (${wTie.tier1} vs ${rTie.tier1})`;
+            } else if (wTie.tier2 !== rTie.tier2) {
+                resolvedBy = `most exact position hits (${wTie.tier2}/3 vs ${rTie.tier2}/3)`;
+            } else if (wTie.tier3 !== rTie.tier3) {
+                resolvedBy = `closest exacta — first 2 picks (${wTie.tier3} vs ${rTie.tier3})`;
+            } else {
+                resolvedBy = `every tier still tied — coin flip required`;
+                coinFlip = true;
+            }
         } else {
-            resolvedBy = `still tied even on trifecta closeness — ranking is non-deterministic`;
+            // Legacy fallback (no fullFinish entered)
+            if (wTie.setMatch !== rTie.setMatch) resolvedBy = `more right horses in the trifecta (${wTie.setMatch}/3 vs ${rTie.setMatch}/3)`;
+            else if (wTie.exactMatch !== rTie.exactMatch) resolvedBy = `more horses in their correct position (${wTie.exactMatch}/3 vs ${rTie.exactMatch}/3)`;
+            else { resolvedBy = `still tied — coin flip required`; coinFlip = true; }
         }
 
+        const scoreCell = (t) => useFull
+            ? `tri err ${t.tier1} · exacta err ${t.tier3} · ${t.tier2}/3 exact`
+            : `${t.setMatch}/3 set · ${t.exactMatch}/3 exact`;
+
         const tiedRows = tiedAtTop.map((r, i) => {
-            const isWinner = i === 0;
+            const isWinner = i === 0 && !coinFlip;
+            const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '·'));
             return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
-                <span class="pool-tie-rank">${isWinner ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '·'))}</span>
+                <span class="pool-tie-rank">${coinFlip ? '🪙' : medal}</span>
                 <span class="pool-tie-name">${escapeHtml(r.displayName)}</span>
-                <span class="pool-tie-score">${r.tieBreak.setMatch}/3 set · ${r.tieBreak.exactMatch}/3 exact</span>
+                <span class="pool-tie-score">${scoreCell(r.tieBreak)}</span>
             </li>`;
         }).join('');
 
+        const fineprint = useFull
+            ? `Cascade: bankroll → tri positional error (sum of |slot − actual finish position|, scratched = 20) → exact position hits → exacta error (first 2 picks only) → coin flip.`
+            : `Cascade: bankroll → set match → exact match → coin flip. <em>Add the full finish order in admin to use the more granular tiebreaker.</em>`;
+
         return `
-            <div class="pool-tie-analysis">
-                <div class="pool-tie-header">⚖️ ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}</div>
+            <div class="pool-tie-analysis ${coinFlip ? 'pool-tie-coinflip' : ''}">
+                <div class="pool-tie-header">${coinFlip ? '🪙' : '⚖️'} ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}</div>
                 <p class="pool-tie-explainer">
-                    Tiebreaker: trifecta closeness. <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.
+                    ${coinFlip
+                        ? `<strong>Coin flip required</strong> — ${escapeHtml(tiedAtTop.map(r => r.displayName).join(', '))} all tie on every tiebreaker tier.`
+                        : `Tiebreaker: <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.`}
                 </p>
                 <ul class="pool-tie-table">${tiedRows}</ul>
-                <p class="pool-tie-fineprint">
-                    <em>Set match</em> = how many of your trifecta picks landed in the actual top 3 (any order). <em>Exact match</em> = how many landed in the correct finishing position. Cascade: bankroll → set match → exact match.
-                </p>
+                <p class="pool-tie-fineprint">${fineprint}</p>
             </div>
         `;
     }

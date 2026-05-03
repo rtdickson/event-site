@@ -415,6 +415,35 @@
     line-height: 1.5;
 }
 
+.pool-tie-coinflip {
+    background: #fdecea;
+    border-color: #d32f2f;
+}
+
+.pool-tie-coinflip .pool-tie-header {
+    color: #b71c1c;
+}
+
+.pool-full-finish-section {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed #ccc;
+}
+
+.pool-full-finish-section h4 {
+    margin: 0 0 4px;
+    font-size: 14px;
+}
+
+.pool-full-finish-section textarea {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
 /* Winner banner (post-results) */
 .pool-winner-banner {
     background: linear-gradient(135deg, #fff8e1 0%, #f8e8b0 50%, #fff8e1 100%);

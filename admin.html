@@ -299,6 +299,16 @@
                                     <p class="pool-admin-help">Enter results after the race. Standings are computed from the entries.</p>
                                     <form id="pool-results-form"></form>
                                     <div id="pool-standings"></div>
+
+                                    <div class="pool-full-finish-section">
+                                        <h4>Full Finish Order (for tiebreaker)</h4>
+                                        <p class="pool-admin-help">Comma-separated horse numbers in order from 1st place to last. Used for the granular tiebreaker ladder (positional error, exacta closeness). Leave blank to fall back to set/exact-match math.</p>
+                                        <textarea id="pool-full-finish-input" rows="2" placeholder="19, 1, 22, 4, 8, ..."></textarea>
+                                        <div style="margin-top:6px;">
+                                            <button type="button" id="pool-save-finish-btn" class="pool-secondary-btn">Save Finish Order</button>
+                                            <span id="pool-finish-msg" class="pool-admin-help" style="margin-left:10px;"></span>
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <div class="pool-admin-block pool-entries-block">

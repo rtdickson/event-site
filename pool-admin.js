@@ -721,6 +721,52 @@
             });
         }
 
+        // Full finish order entry
+        const finishInput = document.getElementById('pool-full-finish-input');
+        const finishBtn = document.getElementById('pool-save-finish-btn');
+        const finishMsg = document.getElementById('pool-finish-msg');
+        if (finishInput && currentPoolEvent.poolConfig.fullFinish) {
+            finishInput.value = (currentPoolEvent.poolConfig.fullFinish || []).join(', ');
+        }
+        if (finishBtn && !finishBtn.dataset.wired) {
+            finishBtn.dataset.wired = '1';
+            finishBtn.addEventListener('click', async () => {
+                const raw = finishInput.value.trim();
+                if (!raw) {
+                    if (!confirm('Clear the full finish order?')) return;
+                    await savePoolConfig({ fullFinish: null });
+                    finishMsg.textContent = 'Cleared.';
+                    finishMsg.style.color = '#666';
+                    renderStandings();
+                    return;
+                }
+                const ids = raw.split(/\s*[,\n]\s*/).map(s => parseInt(s, 10)).filter(n => Number.isFinite(n) && n > 0);
+                if (ids.length === 0) {
+                    finishMsg.textContent = 'No valid horse numbers parsed.';
+                    finishMsg.style.color = 'red';
+                    return;
+                }
+                // Validate against contestants
+                const contestantIds = new Set((currentPoolEvent.poolConfig.contestants || []).map(c => Number(c.id)));
+                const unknown = ids.filter(id => !contestantIds.has(id));
+                if (unknown.length) {
+                    finishMsg.textContent = `Unknown horse #s: ${unknown.join(', ')}. Add them to Horses or fix typos.`;
+                    finishMsg.style.color = 'red';
+                    return;
+                }
+                const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+                if (dupes.length) {
+                    finishMsg.textContent = `Duplicate horse #s: ${[...new Set(dupes)].join(', ')}.`;
+                    finishMsg.style.color = 'red';
+                    return;
+                }
+                await savePoolConfig({ fullFinish: ids });
+                finishMsg.textContent = `Saved ${ids.length} positions. Standings re-sorted with new tiebreaker.`;
+                finishMsg.style.color = 'green';
+                renderStandings();
+            });
+        }
+
         if (!form.dataset.wired) {
             form.dataset.wired = '1';
             form.addEventListener('submit', async (e) => {
@@ -788,8 +834,10 @@
                 return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak };
             }).sort((a, b) => {
                 if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
-                if (b.tieBreak.setMatch !== a.tieBreak.setMatch) return b.tieBreak.setMatch - a.tieBreak.setMatch;
-                return b.tieBreak.exactMatch - a.tieBreak.exactMatch;
+                if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
+                if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
+                if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;
+                return 0;
             });
 
             if (ranked.length === 0) {
@@ -797,16 +845,26 @@
                 return;
             }
 
+            const useFull = ranked.length > 0 && ranked[0].tieBreak.usedFullFinish;
+            const tieHelp = useFull
+                ? 'Cascade: bankroll → tri positional error (lower) → exact hits (higher) → exacta error (lower) → coin flip.'
+                : 'Cascade: bankroll → set match → exact match → coin flip. Add full finish order below for granular tiebreaker.';
+            const tieHeader = useFull
+                ? '<th>Tri err</th><th>Exact</th><th>Exacta err</th>'
+                : '<th>Tri match</th>';
+            const tieCell = (t) => useFull
+                ? `<td>${t.tier1}</td><td>${t.tier2}/3</td><td>${t.tier3}</td>`
+                : `<td>${t.setMatch}/3 set, ${t.exactMatch}/3 exact</td>`;
             container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4>'
-                + '<p class="pool-admin-help" style="margin:0 0 8px;">Ties broken by trifecta closeness (set match, then exact match).</p>'
-                + '<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th><th>Parlay</th><th>Tri match</th></tr></thead><tbody>'
+                + `<p class="pool-admin-help" style="margin:0 0 8px;">${tieHelp}</p>`
+                + `<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th><th>Parlay</th>${tieHeader}</tr></thead><tbody>`
                 + ranked.map((r, i) => `
                     <tr>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(r.name)}</td>
                         <td><strong>$${r.score.bankroll}</strong></td>
                         <td>${r.score.parlay.attempted ? (r.score.parlay.hit ? `✓ +$${r.score.parlay.bonus}` : '✗') : ''}</td>
-                        <td>${r.tieBreak.setMatch}/3 set, ${r.tieBreak.exactMatch}/3 exact</td>
+                        ${tieCell(r.tieBreak)}
                     </tr>
                 `).join('') + '</tbody></table>';
         } catch (err) {

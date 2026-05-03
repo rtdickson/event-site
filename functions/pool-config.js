@@ -311,35 +311,81 @@
         return Math.round(o).toLocaleString() + ' to 1';
     }
 
-    // ----- Tiebreaker: how close was an entry's trifecta to the actual top 3? -----
-    // Returns { setMatch, exactMatch } where:
-    //   setMatch — count of picked horses that finished in the actual top 3 (any order), 0-3
-    //   exactMatch — count of picked horses in the exact correct finish position, 0-3
-    // Used as secondary sort keys when bankrolls tie.
+    // ----- Tiebreaker ladder (when bankrolls tie) -----
+    // Computes 4-tier tiebreaker scores. Sort cascade:
+    //   bankroll desc → tier1 asc → tier2 desc → tier3 asc → coin flip
+    //
+    // Tier 1 (positionError):  Sum of |predicted_slot - actual_finish_pos| across all 3 trifecta picks.
+    //                          Scratched/missing horses get a SCRATCH_PENALTY of 20. LOWER wins.
+    // Tier 2 (exactHits):      Count of picks where predicted slot === actual finish position. HIGHER wins.
+    // Tier 3 (exactaError):    Same as Tier 1 but only for first two trifecta picks (1st + 2nd). LOWER wins.
+    // Tier 4: coin flip — surfaced to admin if all three tiers tie.
+    //
+    // Falls back to legacy setMatch/exactMatch if poolConfig.fullFinish isn't set yet.
+    const TIE_SCRATCH_PENALTY = 20;
+
     function triCloseness(entry, poolConfig) {
-        const result = { setMatch: 0, exactMatch: 0 };
-        if (!entry || !poolConfig) return result;
+        const out = {
+            // Legacy fields (kept for backward compat with admin standings table)
+            setMatch: 0,
+            exactMatch: 0,
+            // New ladder fields
+            tier1: Infinity,
+            tier2: 0,
+            tier3: Infinity,
+            usedFullFinish: false
+        };
+        if (!entry || !poolConfig) return out;
         const picks = entry.picks || {};
         const questions = poolConfig.questions || [];
         const results = poolConfig.results || {};
 
-        // Find the trifecta question
-        const triQ = questions.find(q => q.kind === 'orderedTriple' || q.kind === 'unorderedTriple');
-        if (!triQ) return result;
-
+        const triQ = questions.find(q => q.kind === 'orderedTriple');
+        if (!triQ) return out;
         const triPick = picks[triQ.id];
-        const triResult = results[triQ.id];
-        if (!Array.isArray(triPick) || !Array.isArray(triResult)) return result;
+        if (!Array.isArray(triPick)) return out;
+        const pickIds = triPick.map(Number);
 
-        const pickIds = triPick.map(Number).filter(n => !isNaN(n));
-        const resultIds = triResult.map(Number).filter(n => !isNaN(n));
-        const resultSet = new Set(resultIds);
+        // --- New ladder math (uses fullFinish if available) ---
+        const fullFinish = Array.isArray(poolConfig.fullFinish) ? poolConfig.fullFinish.map(Number) : null;
+        if (fullFinish && fullFinish.length > 0) {
+            out.usedFullFinish = true;
+            const posByHorse = {};
+            fullFinish.forEach((id, idx) => { posByHorse[id] = idx + 1; }); // 1-indexed
 
-        for (let i = 0; i < pickIds.length; i++) {
-            if (resultSet.has(pickIds[i])) result.setMatch++;
-            if (resultIds[i] !== undefined && pickIds[i] === resultIds[i]) result.exactMatch++;
+            let posErrorSum = 0;
+            let exactaErrorSum = 0;
+            let exactHits = 0;
+            for (let slotIdx = 0; slotIdx < pickIds.length; slotIdx++) {
+                const horse = pickIds[slotIdx];
+                const predictedSlot = slotIdx + 1;
+                const actualPos = posByHorse[horse];
+                const err = (actualPos === undefined) ? TIE_SCRATCH_PENALTY : Math.abs(predictedSlot - actualPos);
+                posErrorSum += err;
+                if (slotIdx < 2) exactaErrorSum += err;
+                if (actualPos === predictedSlot) exactHits++;
+            }
+            out.tier1 = posErrorSum;
+            out.tier2 = exactHits;
+            out.tier3 = exactaErrorSum;
         }
-        return result;
+
+        // --- Legacy math (always computed for backward compat / display) ---
+        const triResult = results[triQ.id];
+        if (Array.isArray(triResult)) {
+            const resultIds = triResult.map(Number).filter(n => !isNaN(n));
+            const resultSet = new Set(resultIds);
+            for (let i = 0; i < pickIds.length; i++) {
+                if (resultSet.has(pickIds[i])) out.setMatch++;
+                if (resultIds[i] !== undefined && pickIds[i] === resultIds[i]) out.exactMatch++;
+            }
+            // If fullFinish wasn't set, fall back to legacy for tier2 too
+            if (!out.usedFullFinish) {
+                out.tier2 = out.exactMatch;
+            }
+        }
+
+        return out;
     }
 
     // ----- Real-money simulation: "if we'd actually wagered" -----
