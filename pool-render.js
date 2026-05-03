@@ -217,20 +217,20 @@
                 const oddsStr = (!hasResults && slipProb)
                     ? `<div class="pool-entry-odds">odds ${window.PoolConfig.formatOddsAgainst(slipProb)}</div>`
                     : '';
-                const tiebreakStr = (hasResults && tiedIndexes.has(i) && tieBreak)
-                    ? (tieBreak.usedFullFinish
-                        ? `<div class="pool-entry-tiebreak">tri error: ${tieBreak.tier1} · exacta err: ${tieBreak.tier3} · exact: ${tieBreak.tier2}/3</div>`
-                        : `<div class="pool-entry-tiebreak">tri: ${tieBreak.setMatch}/3 set, ${tieBreak.exactMatch}/3 exact</div>`)
-                    : '';
                 const amountStr = hasResults
-                    ? `<strong>$${score.bankroll.toLocaleString()}</strong>${tiebreakStr}`
+                    ? `<strong>$${score.bankroll.toLocaleString()}</strong>`
                     : `<span class="pool-max-cell">$${max.toLocaleString()}</span>${oddsStr}`;
                 const detail = renderEntryDetail(data, config, contestantsById, score);
-                const rankBadge = hasResults && i < 3 ? `<span class="pool-rank-badge rank-${i+1}">${['🥇','🥈','🥉'][i]}</span>` : '';
+
+                // Single 🏆 only for the actual winner; tied entries get a 'tied' badge instead of medals
+                const tiedWithAbove = hasResults && i > 0 && ranked[i-1].score.bankroll === score.bankroll;
+                const winnerBadge = hasResults && i === 0 ? '<span class="pool-winner-marker">🏆</span>' : '';
+                const tiedBadge = tiedWithAbove ? '<span class="pool-tied-badge">tied</span>' : '';
+
                 return `
-                    <details class="pool-entry-row${tiedIndexes.has(i) ? ' pool-entry-tied' : ''}">
+                    <details class="pool-entry-row${i === 0 && hasResults ? ' pool-entry-winner' : ''}${tiedWithAbove ? ' pool-entry-tied' : ''}">
                         <summary>
-                            <span class="pool-entry-name">${rankBadge}<strong>${escapeHtml(displayName)}</strong>${hasLocks ? ' <span class="pool-tag">parlay</span>' : ''}</span>
+                            <span class="pool-entry-name">${winnerBadge}<strong>${escapeHtml(displayName)}</strong>${tiedBadge}${hasLocks ? ' <span class="pool-tag">parlay</span>' : ''}</span>
                             <span class="pool-entry-amount">${amountStr}</span>
                             <span class="pool-entry-toggle">▾</span>
                         </summary>
@@ -364,10 +364,10 @@
 
         const tiedRows = tiedAtTop.map((r, i) => {
             const isWinner = i === 0 && !coinFlip;
-            const medal = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : '·'));
+            const marker = coinFlip ? '🪙' : (isWinner ? '🏆' : '·');
             return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
-                <span class="pool-tie-rank">${coinFlip ? '🪙' : medal}</span>
-                <span class="pool-tie-name">${escapeHtml(r.displayName)}</span>
+                <span class="pool-tie-rank">${marker}</span>
+                <span class="pool-tie-name">${escapeHtml(r.displayName)}${isWinner ? '' : ' <span class="pool-tied-badge">tied</span>'}</span>
                 <span class="pool-tie-score">${scoreCell(r.tieBreak)}</span>
             </li>`;
         }).join('');
