@@ -109,7 +109,8 @@
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
             { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
-            { id: 'longshot', kind: 'autoProp',       label: 'Long Shot Top 3 (15:1+ horse in top 3)', autoComputeFrom: 'longshotQualifiers', payoffMultiplier: 6 }
+            // Long shot: player picks one 15:1+ horse; hits if it finishes top 3.
+            { id: 'longshot', kind: 'pickLongshot',   label: 'Long Shot (15:1+) to finish top 3', payoffMultiplier: 6 }
         ];
     }
 

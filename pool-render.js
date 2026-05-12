@@ -882,6 +882,20 @@
                         </select>`).join('')}
                     </div>`;
                 break;
+            case 'pickLongshot': {
+                const longshots = contestants.filter(c => c.isLongshot);
+                if (longshots.length === 0) {
+                    pickUI = `<label class="pool-alloc-pick-label">Pick a longshot to finish top 3</label>
+                        <em style="color:#888; display:block; padding:6px 0;">No longshots (15:1+) flagged in the field yet.</em>`;
+                } else {
+                    pickUI = `<label class="pool-alloc-pick-label">Pick a longshot (15:1+) to finish top 3</label>
+                        <select data-pick-key="${q.id}">
+                            <option value="">— pick —</option>
+                            ${longshots.map(c => optionFor(c, v)).join('')}
+                        </select>`;
+                }
+                break;
+            }
             case 'autoProp':
                 pickUI = `<div class="pool-alloc-prop-desc">No pick — bet auto-hits if any 15:1+ longshot finishes in the top 3.</div>`;
                 break;

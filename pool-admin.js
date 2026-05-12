@@ -98,6 +98,16 @@
                 next.scoring = next.scoring || 'gradientOdds';
                 dirty = true;
             }
+            // Longshot: convert legacy autoProp (auto-hit if any 15:1+ in top 3) to pickLongshot
+            // (player picks one 15:1+ horse, hits if it finishes top 3).
+            if (isAlloc && next.kind === 'autoProp' && next.autoComputeFrom === 'longshotQualifiers') {
+                next.kind = 'pickLongshot';
+                delete next.autoComputeFrom;
+                if (!next.label || /long\s*shot.*top\s*3/i.test(next.label)) {
+                    next.label = 'Long Shot (15:1+) to finish top 3';
+                }
+                dirty = true;
+            }
             return next;
         });
         if (dirty) {
