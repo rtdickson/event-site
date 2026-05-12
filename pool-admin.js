@@ -656,11 +656,15 @@
         const container = document.getElementById('pool-questions-list');
         if (!container) return;
         const questions = currentPoolEvent.poolConfig.questions || [];
+        const PC = window.PoolConfig;
+        const bankrollMode = (currentPoolEvent.poolConfig.bankrollMode === 'allocate') ? 'allocate' : 'fixed';
+        const usedIds = new Set(questions.map(q => q.id));
+
+        let html = '';
         if (questions.length === 0) {
-            container.innerHTML = '<p class="pool-admin-help">No questions. Click "Reset to Derby defaults".</p>';
+            html += '<p class="pool-admin-help">No bets yet. Add from the catalog below.</p>';
         } else {
-            const PC = window.PoolConfig;
-            container.innerHTML = '<table class="pool-table"><thead><tr><th>Label</th><th>Kind</th><th>Stake</th><th>Payoff</th><th></th></tr></thead><tbody>'
+            html += '<table class="pool-table"><thead><tr><th>Label</th><th>Kind</th><th>Stake</th><th>Payoff</th><th></th></tr></thead><tbody>'
                 + questions.map(q => {
                     const stake = PC.effectiveStake(q, currentPoolEvent.poolConfig);
                     const flat = PC.payoffIfHit(q, stake);
@@ -677,24 +681,96 @@
                         </tr>
                     `;
                 }).join('') + '</tbody></table>';
-            container.querySelectorAll('.pool-remove-btn').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    const qid = btn.getAttribute('data-question-id');
-                    if (!confirm(`Remove question "${qid}"?`)) return;
-                    const next = (currentPoolEvent.poolConfig.questions || []).filter(q => q.id !== qid);
-                    await savePoolConfig({ questions: next });
-                    renderQuestions();
-                    renderResultsForm();
-                });
+        }
+
+        // "Add Bet from Catalog" picker — bets available for this pool mode, grouped by category
+        const catalog = PC.availableBetTypes ? PC.availableBetTypes(bankrollMode) : [];
+        if (catalog.length > 0) {
+            const byCategory = {};
+            catalog.forEach(b => {
+                if (!byCategory[b.category]) byCategory[b.category] = [];
+                byCategory[b.category].push(b);
+            });
+            const optionGroups = Object.keys(byCategory).map(cat => {
+                const opts = byCategory[cat].map(b => {
+                    const inUse = usedIds.has(b.template.id);
+                    return `<option value="${b.id}" ${inUse ? 'disabled' : ''}>${escapeHtml(b.catalogLabel)}${inUse ? ' (already added)' : ''}</option>`;
+                }).join('');
+                return `<optgroup label="${escapeHtml(cat)}">${opts}</optgroup>`;
+            }).join('');
+            html += `
+                <div class="pool-add-bet">
+                    <h4 style="margin:14px 0 6px;">Add a bet</h4>
+                    <p class="pool-admin-help" style="margin:0 0 6px;">Pick a bet template from the catalog below. ${bankrollMode === 'allocate' ? 'Allocation' : 'Fixed-stake'} pool — only compatible bets shown.</p>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                        <select id="pool-add-bet-select" style="flex:1; min-width:240px;">
+                            <option value="">— pick a bet type —</option>
+                            ${optionGroups}
+                        </select>
+                        <button type="button" id="pool-add-bet-btn" class="pool-secondary-btn">Add Bet</button>
+                    </div>
+                    <p id="pool-add-bet-desc" class="pool-admin-help" style="margin-top:6px; min-height:16px;"></p>
+                    <p id="pool-add-bet-msg" class="pool-admin-help"></p>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+
+        // Wire remove buttons
+        container.querySelectorAll('.pool-remove-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const qid = btn.getAttribute('data-question-id');
+                if (!confirm(`Remove this bet ("${qid}") from the event?`)) return;
+                const next = (currentPoolEvent.poolConfig.questions || []).filter(q => q.id !== qid);
+                await savePoolConfig({ questions: next });
+                renderQuestions();
+                renderResultsForm();
+            });
+        });
+
+        // Wire Add Bet picker
+        const select = document.getElementById('pool-add-bet-select');
+        const addBtn = document.getElementById('pool-add-bet-btn');
+        const desc = document.getElementById('pool-add-bet-desc');
+        const msg = document.getElementById('pool-add-bet-msg');
+        if (select && desc) {
+            select.addEventListener('change', () => {
+                const b = catalog.find(b => b.id === select.value);
+                desc.textContent = b ? b.description : '';
+            });
+        }
+        if (addBtn) {
+            addBtn.addEventListener('click', async () => {
+                const sel = select.value;
+                if (!sel) { msg.textContent = 'Pick a bet type first.'; msg.style.color = 'red'; return; }
+                const b = catalog.find(b => b.id === sel);
+                if (!b) return;
+                if (usedIds.has(b.template.id)) {
+                    msg.textContent = `Already have a bet with id "${b.template.id}". Remove that one first to add this template.`;
+                    msg.style.color = 'red';
+                    return;
+                }
+                const next = (currentPoolEvent.poolConfig.questions || []).slice();
+                next.push(JSON.parse(JSON.stringify(b.template))); // deep clone
+                await savePoolConfig({ questions: next });
+                msg.textContent = `Added "${b.catalogLabel}".`;
+                msg.style.color = 'green';
+                renderQuestions();
+                renderResultsForm();
             });
         }
 
+        // Wire (legacy) "Reset to defaults" button — keeps Derby reset for backward compat
         const resetBtn = document.getElementById('pool-reset-questions');
         if (resetBtn && !resetBtn.dataset.wired) {
             resetBtn.dataset.wired = '1';
             resetBtn.addEventListener('click', async () => {
-                if (!confirm('Reset questions to Derby defaults? This will overwrite the current question list.')) return;
-                await savePoolConfig({ questions: window.PoolConfig.defaultDerbyQuestions() });
+                const mode = (currentPoolEvent.poolConfig.bankrollMode === 'allocate') ? 'Preakness' : 'Derby';
+                const defaults = (mode === 'Preakness')
+                    ? window.PoolConfig.defaultPreaknessQuestions()
+                    : window.PoolConfig.defaultDerbyQuestions();
+                if (!confirm(`Reset questions to ${mode} defaults? This overwrites the current bet list.`)) return;
+                await savePoolConfig({ questions: defaults });
                 renderQuestions();
                 renderResultsForm();
             });

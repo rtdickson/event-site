@@ -102,6 +102,124 @@
     // ----- Default Preakness question set -----
     // Used by allocation-mode pools. Players allocate from a $5,000 bankroll across these 5 bets.
     // Payoff formula in allocation mode: if hit, payout = (stake * payoffMultiplier) + stake. If miss, payout = 0.
+    // ----- Bet type catalog -----
+    // Central registry of available bet templates. Admin can pick from this list to build the
+    // question set for an event. Each entry has a friendly catalog label + a `template` object that
+    // gets cloned (deep) into poolConfig.questions when added. Per-event tweaks (custom multiplier,
+    // label override, line) happen after the bet is added.
+    //
+    // To add a new bet type: define the template here. It'll appear in the admin "Add Bet" dropdown
+    // automatically and works through the existing scoring + form rendering.
+    const BET_CATALOG = [
+        // Single-horse bets
+        {
+            id: 'win', category: 'Single horse',
+            catalogLabel: 'Win — pick the winner',
+            description: 'Pick one horse to finish 1st. Payoff = stake × decimal odds.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'win', kind: 'pickContestant', label: 'Pick the Winner', resultKey: 'win', lockable: true }
+        },
+        {
+            id: 'place', category: 'Single horse',
+            catalogLabel: 'Place — pick 2nd',
+            description: 'Pick one horse to finish 2nd. Payoff = stake × decimal odds.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'place', kind: 'pickContestant', label: 'Finishes 2nd', resultKey: 'place', lockable: true }
+        },
+        {
+            id: 'show', category: 'Single horse',
+            catalogLabel: 'Show — pick 3rd',
+            description: 'Pick one horse to finish 3rd. Payoff = stake × decimal odds.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'show', kind: 'pickContestant', label: 'Finishes 3rd', resultKey: 'show', lockable: true }
+        },
+        {
+            id: 'top5_single', category: 'Single horse',
+            catalogLabel: 'Top-N (single horse) — fixed multiplier',
+            description: 'Pick one horse to finish in the top N. Configurable N and multiplier.',
+            modes: ['allocate', 'fixed'],
+            template: { id: 'top5', kind: 'pickInTopN', label: 'Top 5 Finishers', topN: 5, pickN: 1, payoffMultiplier: 1.5 }
+        },
+        // Multi-horse bets
+        {
+            id: 'top5_gradient', category: 'Multi-horse',
+            catalogLabel: 'Top-N gradient — pick N, score per match + odds',
+            description: 'Pick N horses (any order). Multiplier = (# correct picks) + (sum of decimal odds of correct picks). Rewards spread + longshot conviction.',
+            modes: ['allocate'],
+            template: { id: 'top5', kind: 'pickInTopN', label: 'Top 5 Finishers (pick 5)', topN: 5, pickN: 5, scoring: 'gradientOdds' }
+        },
+        {
+            id: 'tri', category: 'Multi-horse',
+            catalogLabel: 'Trifecta — pick 1-2-3 in exact order',
+            description: 'Pick 3 horses in the exact finish order. Highest-payoff hard bet.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'tri', kind: 'orderedTriple', label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 }
+        },
+        {
+            id: 'exacta', category: 'Multi-horse',
+            catalogLabel: 'Exacta — pick 1-2 in exact order',
+            description: 'Pick the top 2 in exact finish order.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'exacta', kind: 'orderedPair', label: 'Exacta (1-2 in order)', payoffMultiplier: 5 }
+        },
+        {
+            id: 'box3', category: 'Multi-horse',
+            catalogLabel: 'Top-3 Box — pick 3 in any order',
+            description: 'Pick 3 horses. Bet hits if all 3 finish in the top 3, any order.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', payoffMultiplier: 10 }
+        },
+        // Longshot bets
+        {
+            id: 'longshot_pick', category: 'Longshot',
+            catalogLabel: 'Long Shot — pick one 15:1+ horse',
+            description: 'Pick one horse flagged as longshot (15:1+). Bet hits if it finishes top 3.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'longshot', kind: 'pickLongshot', label: 'Long Shot (15:1+) to finish top 3', payoffMultiplier: 6 }
+        },
+        {
+            id: 'longshot_auto', category: 'Longshot',
+            catalogLabel: 'Long Shot — auto-prop (any 15:1+ in top 3)',
+            description: 'No pick. Bet auto-hits if ANY longshot (15:1+) finishes in the top 3.',
+            modes: ['allocate'],
+            template: { id: 'longshot', kind: 'autoProp', label: 'Long Shot Top 3 (auto)', autoComputeFrom: 'longshotQualifiers', payoffMultiplier: 6 }
+        },
+        // Props (over/under, yes/no)
+        {
+            id: 'time_ou', category: 'Prop',
+            catalogLabel: 'Time over/under',
+            description: 'Pick over or under the posted winning time line. Default 1:58.00 for Preakness, 2:02 for Derby.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'timeou', kind: 'overUnder', label: 'Winning time over/under', line: '1:58.00', payoffMultiplier: 2 }
+        },
+        {
+            id: 'margin_ou', category: 'Prop',
+            catalogLabel: 'Margin of victory over/under',
+            description: 'Pick over or under the posted margin (lengths) the winner wins by.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'marginou', kind: 'overUnder', label: 'Winning margin over/under', line: '2 lengths', payoffMultiplier: 2 }
+        },
+        {
+            id: 'fav_top3', category: 'Prop',
+            catalogLabel: 'Favorite finishes top 3? (yes/no)',
+            description: 'Pick yes or no — does the morning-line favorite finish top 3?',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'fav', kind: 'yesNo', label: 'Will the favorite finish top 3?', payoffMultiplier: 2 }
+        },
+        {
+            id: 'custom_yn', category: 'Prop',
+            catalogLabel: 'Custom yes/no prop (edit label after add)',
+            description: 'Generic yes/no prop. Edit the label on the bet itself to set the question.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'custom', kind: 'yesNo', label: 'Custom yes/no prop (edit me)', payoffMultiplier: 2 }
+        }
+    ];
+
+    function availableBetTypes(bankrollMode) {
+        const mode = bankrollMode === 'allocate' ? 'allocate' : 'fixed';
+        return BET_CATALOG.filter(b => b.modes.includes(mode));
+    }
+
     function defaultPreaknessQuestions() {
         return [
             // Top 5: gradient scoring — pick 5 horses; multiplier = (# in actual top 5) + (sum of their odds)
@@ -861,6 +979,8 @@
         parseOdds,
         defaultDerbyQuestions,
         defaultPreaknessQuestions,
+        BET_CATALOG,
+        availableBetTypes,
         isAllocationMode,
         getPickValue,
         getPickStake,
