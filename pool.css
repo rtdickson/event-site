@@ -420,6 +420,21 @@
     color: var(--primary-dark, #333);
 }
 
+/* Admin: pool config fields (bankroll mode, etc.) — stack labels above inputs */
+.pool-cfg-fields label {
+    display: block;
+    margin-top: 8px;
+    font-weight: 500;
+    color: #555;
+}
+
+.pool-cfg-fields input {
+    display: block;
+    width: 200px;
+    max-width: 100%;
+    margin-top: 4px;
+}
+
 /* Admin: longshot qualifier grid */
 .pool-longshot-grid {
     display: grid;

@@ -201,12 +201,12 @@
                                         </select>
                                         <small style="color:#666; display:block; margin-bottom:10px;">Fixed = same stake on every question. Allocate = players split a budget across bets.</small>
 
-                                        <div id="pool-fixed-fields">
+                                        <div id="pool-fixed-fields" class="pool-cfg-fields">
                                             <label for="pool-default-stake">Default stake (fun money per pick):</label>
                                             <input id="pool-default-stake" type="number" min="1" value="100" />
                                         </div>
 
-                                        <div id="pool-allocate-fields" style="display:none;">
+                                        <div id="pool-allocate-fields" class="pool-cfg-fields" style="display:none;">
                                             <label for="pool-bankroll-amount">Total bankroll per player:</label>
                                             <input id="pool-bankroll-amount" type="number" min="100" step="100" value="5000" />
                                             <label for="pool-bankroll-min">Minimum per bet:</label>
@@ -214,7 +214,7 @@
                                             <label for="pool-bankroll-max">Maximum per bet:</label>
                                             <input id="pool-bankroll-max" type="number" min="100" step="100" value="2000" />
                                             <label for="pool-bankroll-increment">Step size ($ per +/- click):</label>
-                                            <input id="pool-bankroll-increment" type="number" min="1" step="50" value="100" />
+                                            <input id="pool-bankroll-increment" type="number" min="25" step="25" value="100" />
                                             <small style="color:#666; display:block; margin-bottom:10px;">Total must allocate exactly the bankroll. Mobile UI uses +/− buttons in step increments.</small>
                                         </div>
 
