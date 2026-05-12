@@ -404,7 +404,7 @@
             if (!q || !q.lockable) { parlayHitAll = false; continue; }
             const pq = perQuestion.find(p => p.questionId === qid);
             if (!pq || !pq.hit) { parlayHitAll = false; }
-            const contestant = contestantsById[Number(picks[qid])];
+            const contestant = contestantsById[Number(getPickValue(picks[qid]))];
             const odds = parseOdds(contestant && contestant.odds);
             parlayLegs.push({ questionId: qid, odds: odds });
         }
@@ -455,7 +455,8 @@
         let p = 1;
         let counted = 0;
         for (const q of questions) {
-            const v = picks[q.id];
+            // Unwrap allocation-mode { value, stake } so legacy code that expects raw values works
+            const v = getPickValue(picks[q.id]);
             if (v === null || v === undefined || v === '') continue;
             if (Array.isArray(v) && v.some(x => x == null || x === '')) continue;
 
@@ -477,18 +478,37 @@
                     counted++;
                     break;
                 }
+                case 'pickInTopN': {
+                    // Gradient slips don't have a meaningful 'odds against' — skip cleanly
+                    if (q.pickN && q.pickN > 1) { counted++; p *= 0.5; break; }
+                    const c = cById[Number(v)];
+                    const pwin = impliedWinProbability(c);
+                    p *= Math.min(0.85, pwin * (q.topN || 5));
+                    counted++;
+                    break;
+                }
                 case 'orderedTriple': {
+                    if (!Array.isArray(v)) { counted++; break; }
                     const prod = v.reduce((acc, id) => acc * impliedWinProbability(cById[Number(id)]), 1);
                     p *= prod;
                     counted++;
                     break;
                 }
+                case 'orderedPair': {
+                    if (!Array.isArray(v)) { counted++; break; }
+                    const prod = v.reduce((acc, id) => acc * impliedWinProbability(cById[Number(id)]), 1);
+                    p *= prod * 2; // rough exacta likelihood
+                    counted++;
+                    break;
+                }
                 case 'unorderedTriple': {
+                    if (!Array.isArray(v)) { counted++; break; }
                     const prod = v.reduce((acc, id) => acc * impliedWinProbability(cById[Number(id)]), 1);
                     p *= Math.min(1, prod * 6); // 6 orderings
                     counted++;
                     break;
                 }
+                case 'autoProp':
                 case 'overUnder':
                 case 'yesNo':
                     p *= 0.5;
@@ -566,7 +586,7 @@
 
         const triQ = questions.find(q => q.kind === 'orderedTriple');
         if (!triQ) return out;
-        const triPick = picks[triQ.id];
+        const triPick = getPickValue(picks[triQ.id]);
         if (!Array.isArray(triPick)) return out;
         const pickIds = triPick.map(Number);
 
@@ -629,12 +649,16 @@
         let wagered = 0;
         let expectedReturn = 0;
 
+        const alloc = isAllocationMode(poolConfig);
         for (const q of questions) {
-            const v = picks[q.id];
+            // Unwrap allocation-mode { value, stake }
+            const v = getPickValue(picks[q.id]);
             if (v === null || v === undefined || v === '') continue;
             if (Array.isArray(v) && v.some(x => x == null || x === '')) continue;
 
-            const stake = effectiveStake(q, poolConfig);
+            // Allocation mode uses per-pick stake; legacy uses effectiveStake
+            const stakeFromPick = getPickStake(picks[q.id]);
+            const stake = (alloc && stakeFromPick !== null) ? stakeFromPick : effectiveStake(q, poolConfig);
             wagered += stake;
 
             let pHit = 0;
@@ -655,12 +679,39 @@
                     payoff = payoffIfHit(q, stake);
                     break;
                 }
+                case 'pickInTopN': {
+                    // Rough estimate for gradient/single — use top-N reach prob × stake × mult
+                    const N = q.topN || 5;
+                    if (q.pickN && q.pickN > 1 && Array.isArray(v)) {
+                        let sumP = 0;
+                        v.forEach(id => { if (id != null) sumP += Math.min(0.85, (1 / (parseOdds((cById[Number(id)]||{}).odds).decimal + 1)) * N); });
+                        pHit = sumP / (q.pickN || 1);
+                    } else {
+                        const c = cById[Number(v)];
+                        pHit = Math.min(0.85, (1 / (parseOdds(c && c.odds).decimal + 1)) * N);
+                    }
+                    payoff = payoffForHit(q, stake, 0, poolConfig);
+                    break;
+                }
+                case 'orderedPair': {
+                    if (!Array.isArray(v)) break;
+                    pHit = v.reduce((acc, id) => acc * (1 / (parseOdds((cById[Number(id)] || {}).odds).decimal + 1)), 1);
+                    payoff = payoffForHit(q, stake, 0, poolConfig);
+                    break;
+                }
+                case 'autoProp': {
+                    pHit = 0.4; // rough — varies by qualifier list size
+                    payoff = payoffForHit(q, stake, 0, poolConfig);
+                    break;
+                }
                 case 'orderedTriple': {
+                    if (!Array.isArray(v)) break;
                     pHit = v.reduce((acc, id) => acc * (1 / (parseOdds((cById[Number(id)] || {}).odds).decimal + 1)), 1);
                     payoff = payoffIfHit(q, stake);
                     break;
                 }
                 case 'unorderedTriple': {
+                    if (!Array.isArray(v)) break;
                     pHit = Math.min(1, 6 * v.reduce((acc, id) => acc * (1 / (parseOdds((cById[Number(id)] || {}).odds).decimal + 1)), 1));
                     payoff = payoffIfHit(q, stake);
                     break;
@@ -668,7 +719,7 @@
                 case 'overUnder':
                 case 'yesNo':
                     pHit = 0.5;
-                    payoff = stake;
+                    payoff = alloc ? payoffForHit(q, stake, 0, poolConfig) : stake;
                     break;
             }
             expectedReturn += pHit * payoff;
@@ -681,11 +732,11 @@
                 const stake = effectiveStake(validLockedQs[0], poolConfig);
                 wagered += stake; // additional stake on the parlay
                 const jointProb = locks.reduce((acc, qid) => {
-                    const c = cById[Number(picks[qid])];
+                    const c = cById[Number(getPickValue(picks[qid]))];
                     return acc * (1 / (parseOdds(c && c.odds).decimal + 1));
                 }, 1);
                 const product = locks.reduce((acc, qid) => {
-                    const c = cById[Number(picks[qid])];
+                    const c = cById[Number(getPickValue(picks[qid]))];
                     return acc * parseOdds(c && c.odds).decimal;
                 }, 1);
                 expectedReturn += jointProb * Math.round(stake * product);
@@ -717,31 +768,50 @@
         const questionsById = {};
         questions.forEach(q => { questionsById[q.id] = q; });
 
+        const alloc = isAllocationMode(poolConfig);
         let total = 0;
         for (const q of questions) {
-            const pick = picks[q.id];
-            if (pick === undefined || pick === null || pick === '') continue;
+            const rawPick = picks[q.id];
+            if (rawPick === undefined || rawPick === null || rawPick === '') continue;
+            const pick = getPickValue(rawPick);
+            if (pick === null || pick === undefined || pick === '') continue;
             if (Array.isArray(pick) && (pick.length === 0 || pick.some(v => v === '' || v == null))) continue;
-            const stake = effectiveStake(q, poolConfig);
+
+            const stakeFromPick = getPickStake(rawPick);
+            const stake = (alloc && stakeFromPick !== null) ? stakeFromPick : effectiveStake(q, poolConfig);
+
             if (q.kind === 'pickContestant') {
                 const c = contestantsById[Number(pick)];
-                total += payoffIfHit(q, stake, parseOdds(c && c.odds).decimal);
+                total += payoffForHit(q, stake, parseOdds(c && c.odds).decimal, poolConfig);
+            } else if (q.kind === 'pickInTopN') {
+                // Gradient max = all picks correct; multiplier = pickN + sum(odds_decimal of picks)
+                if (q.pickN && q.pickN > 1 && Array.isArray(pick)) {
+                    const ids = pick.filter(v => v != null && v !== '').map(Number);
+                    const uniq = Array.from(new Set(ids));
+                    const oddsSum = uniq.reduce((s, id) => s + parseOdds((contestantsById[id] || {}).odds).decimal, 0);
+                    const mult = uniq.length + oddsSum;
+                    total += Math.round(stake * mult + stake);
+                } else {
+                    total += payoffForHit(q, stake, 0, poolConfig);
+                }
             } else if (q.kind === 'overUnder' || q.kind === 'yesNo') {
-                total += stake;
+                total += alloc ? payoffForHit(q, stake, 0, poolConfig) : stake;
+            } else if (q.kind === 'autoProp') {
+                total += payoffForHit(q, stake, 0, poolConfig);
             } else {
-                total += payoffIfHit(q, stake);
+                total += alloc ? payoffForHit(q, stake, 0, poolConfig) : payoffIfHit(q, stake);
             }
         }
 
-        // Parlay potential (assumes all locked legs hit)
-        if (locks.length >= 2) {
+        // Parlay potential (assumes all locked legs hit) — legacy Derby only
+        if (locks.length >= 2 && !alloc) {
             const validLegs = locks
                 .map(qid => questionsById[qid])
                 .filter(q => q && q.lockable);
             if (validLegs.length === locks.length) {
                 const stake = effectiveStake(validLegs[0], poolConfig);
                 const product = locks.reduce((acc, qid) => {
-                    const c = contestantsById[Number(picks[qid])];
+                    const c = contestantsById[Number(getPickValue(picks[qid]))];
                     return acc * parseOdds(c && c.odds).decimal;
                 }, 1);
                 total += Math.round(stake * product);
