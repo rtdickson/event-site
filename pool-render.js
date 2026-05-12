@@ -182,16 +182,24 @@
                 const tieBreak = hasResults ? window.PoolConfig.triCloseness(data, config) : null;
                 return { data, displayName, score, max, slipProb, tieBreak };
             });
+            const isAlloc = window.PoolConfig.isAllocationMode(config);
+            // Compute winning stake for allocation tiebreaker
+            if (isAlloc && hasResults) {
+                ranked.forEach(r => {
+                    r.winStake = window.PoolConfig.totalWinningStake(r.data, config, contestants);
+                });
+            }
             // Sort cascade (with results):
-            //   1. Bankroll desc
-            //   2. Tier 1 — trifecta positional error sum (lower wins)
-            //   3. Tier 2 — exact position hits (higher wins)
-            //   4. Tier 3 — exacta positional error (lower wins)
-            //   5. Tie remains → coin flip
-            // Falls back to legacy setMatch/exactMatch if fullFinish isn't entered yet.
+            //   Bankroll desc, then:
+            //   - Allocation mode: winning stake desc, then name alphabetical
+            //   - Fixed mode: tri positional error → exact hits → exacta error → coin flip
             ranked.sort((a, b) => {
                 if (hasResults) {
                     if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
+                    if (isAlloc) {
+                        if ((b.winStake || 0) !== (a.winStake || 0)) return (b.winStake || 0) - (a.winStake || 0);
+                        return a.displayName.localeCompare(b.displayName);
+                    }
                     if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
                     if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
                     if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;

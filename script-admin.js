@@ -39,6 +39,7 @@ async function initializeAdmin() {
     setupImagePreview();
     setupDatePreview();
     setupEventTypeToggle();
+    setupBankrollModeToggle();
 
     // Initialize forms now that they are visible
     if (typeof window.initializeContactForm === 'function') {
@@ -212,6 +213,21 @@ function setupEventTypeToggle() {
     sync();
 }
 
+// Show/hide fixed-vs-allocate fields based on bankroll mode selector.
+function setupBankrollModeToggle() {
+    const modeSel = document.getElementById('pool-bankroll-mode');
+    const fixed = document.getElementById('pool-fixed-fields');
+    const alloc = document.getElementById('pool-allocate-fields');
+    if (!modeSel) return;
+    const sync = () => {
+        const isAlloc = modeSel.value === 'allocate';
+        if (fixed) fixed.style.display = isAlloc ? 'none' : 'block';
+        if (alloc) alloc.style.display = isAlloc ? 'block' : 'none';
+    };
+    modeSel.addEventListener('change', sync);
+    sync();
+}
+
 // Convert a display date string back to datetime-local format (best effort)
 function displayDateToInputValue(displayDate) {
     if (!displayDate) return '';
@@ -348,9 +364,28 @@ async function editEvent(eventId) {
             }
             const stakeInput = document.getElementById('pool-default-stake');
             if (stakeInput) {
-                stakeInput.value = data.poolConfig.defaultStake || 10;
+                stakeInput.value = data.poolConfig.defaultStake || 100;
+            }
+            const modeSel = document.getElementById('pool-bankroll-mode');
+            if (modeSel) {
+                modeSel.value = data.poolConfig.bankrollMode === 'allocate' ? 'allocate' : 'fixed';
+                // trigger toggle
+                modeSel.dispatchEvent(new Event('change'));
+            }
+            if (data.poolConfig.bankrollMode === 'allocate') {
+                const bankrollAmount = document.getElementById('pool-bankroll-amount');
+                if (bankrollAmount) bankrollAmount.value = data.poolConfig.bankrollAmount || 5000;
+                const c = data.poolConfig.allocationConstraints || {};
+                const minEl = document.getElementById('pool-bankroll-min');
+                const maxEl = document.getElementById('pool-bankroll-max');
+                const incEl = document.getElementById('pool-bankroll-increment');
+                if (minEl) minEl.value = c.min || 250;
+                if (maxEl) maxEl.value = c.max || 2000;
+                if (incEl) incEl.value = c.increment || 100;
             }
         }
+        const codeInput = document.getElementById('event-code');
+        if (codeInput) codeInput.value = data.eventCode || '';
 
         // Show existing event image in preview
         const preview = document.getElementById('event-image-preview');
@@ -419,6 +454,13 @@ function clearEventForm() {
     if (poolFields) poolFields.style.display = 'none';
     const typeSelect = document.getElementById('event-type');
     if (typeSelect) typeSelect.value = 'gathering';
+    const codeInput = document.getElementById('event-code');
+    if (codeInput) codeInput.value = '';
+    const modeSel = document.getElementById('pool-bankroll-mode');
+    if (modeSel) {
+        modeSel.value = 'fixed';
+        modeSel.dispatchEvent(new Event('change'));
+    }
 }
 
 async function loadEventOptions() {
@@ -1374,6 +1416,7 @@ if (eventForm) {
         const dateRaw = document.getElementById('event-date').value;
         const typeSelect = document.getElementById('event-type');
         const eventType = typeSelect ? typeSelect.value : 'gathering';
+        const eventCodeRaw = (document.getElementById('event-code').value || '').trim().toLowerCase();
 
         const eventData = {
             name: eventName,
@@ -1388,9 +1431,21 @@ if (eventForm) {
             isActive: document.getElementById('event-active').checked
         };
 
+        if (eventCodeRaw) {
+            if (!/^[a-z0-9]{3,12}$/.test(eventCodeRaw)) {
+                document.getElementById('event-message').textContent = 'Event code must be 3–12 lowercase letters/digits.';
+                document.getElementById('event-message').style.color = 'red';
+                submitButton.disabled = false;
+                submitButton.textContent = originalText;
+                return;
+            }
+            eventData.eventCode = eventCodeRaw;
+        }
+
         if (eventType === 'pool') {
             const closesAtRaw = document.getElementById('pool-closes-at').value;
-            const stake = parseInt(document.getElementById('pool-default-stake').value, 10) || 10;
+            const bankrollMode = document.getElementById('pool-bankroll-mode').value || 'fixed';
+            const stake = parseInt(document.getElementById('pool-default-stake').value, 10) || 100;
 
             // Preserve existing poolConfig (contestants/questions/results) on edit; only update top-level pool settings here.
             let existingPoolConfig = {};
@@ -1406,17 +1461,37 @@ if (eventForm) {
                 }
             }
 
-            eventData.poolConfig = Object.assign({}, existingPoolConfig, {
+            // Pick a question set based on mode + whether this is a fresh pool
+            const isFresh = !existingPoolConfig.questions || existingPoolConfig.questions.length === 0;
+            let questions = existingPoolConfig.questions;
+            if (isFresh) {
+                questions = (bankrollMode === 'allocate' && window.PoolConfig)
+                    ? window.PoolConfig.defaultPreaknessQuestions()
+                    : (window.PoolConfig ? window.PoolConfig.defaultDerbyQuestions() : []);
+            }
+
+            const poolConfig = Object.assign({}, existingPoolConfig, {
                 closesAtRaw: closesAtRaw || dateRaw,
                 closesAt: closesAtRaw
                     ? firebase.firestore.Timestamp.fromDate(new Date(closesAtRaw))
                     : firebase.firestore.Timestamp.fromDate(new Date(dateRaw)),
+                bankrollMode: bankrollMode,
                 defaultStake: stake,
-                // Seed defaults if this is a brand-new pool
                 contestants: existingPoolConfig.contestants || [],
-                questions: existingPoolConfig.questions || (window.PoolConfig ? window.PoolConfig.defaultDerbyQuestions() : []),
+                questions: questions,
                 results: existingPoolConfig.results || null
             });
+
+            if (bankrollMode === 'allocate') {
+                poolConfig.bankrollAmount = parseInt(document.getElementById('pool-bankroll-amount').value, 10) || 5000;
+                poolConfig.allocationConstraints = {
+                    min: parseInt(document.getElementById('pool-bankroll-min').value, 10) || 250,
+                    max: parseInt(document.getElementById('pool-bankroll-max').value, 10) || 2000,
+                    increment: parseInt(document.getElementById('pool-bankroll-increment').value, 10) || 100
+                };
+            }
+
+            eventData.poolConfig = poolConfig;
         }
 
         // Handle image upload if a file was selected

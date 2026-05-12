@@ -420,6 +420,36 @@
     color: var(--primary-dark, #333);
 }
 
+/* Admin: longshot qualifier grid */
+.pool-longshot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.pool-longshot-cell {
+    display: grid;
+    grid-template-columns: 20px 40px 1fr auto;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 8px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.pool-longshot-cell:has(input:checked) {
+    background: #fff8e1;
+    border-color: var(--accent, #d4a843);
+}
+
+.pool-longshot-pos { color: #888; font-size: 11px; }
+.pool-longshot-name { font-weight: 500; }
+.pool-longshot-odds { color: #b8860b; font-size: 12px; font-family: monospace; }
+
 /* Allocation form (Preakness) */
 .pool-alloc-header {
     position: sticky;

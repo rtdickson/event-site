@@ -123,8 +123,72 @@
         renderResultsForm();
         renderStandings();
         renderInsights();
+        renderLongshotQualifiers();
         renderAuditSeal();
         renderBroadcast();
+    }
+
+    function renderLongshotQualifiers() {
+        const block = document.getElementById('pool-longshot-block');
+        const list = document.getElementById('pool-longshot-list');
+        if (!block || !list) return;
+
+        const isAlloc = window.PoolConfig && window.PoolConfig.isAllocationMode(currentPoolEvent.poolConfig);
+        const hasAutoProp = (currentPoolEvent.poolConfig.questions || []).some(q => q.kind === 'autoProp' && q.autoComputeFrom === 'longshotQualifiers');
+        if (!isAlloc && !hasAutoProp) {
+            block.style.display = 'none';
+            return;
+        }
+        block.style.display = 'block';
+
+        const contestants = currentPoolEvent.poolConfig.contestants || [];
+        const currentSet = new Set((currentPoolEvent.poolConfig.longshotQualifiers || []).map(Number));
+        list.innerHTML = '<div class="pool-longshot-grid">'
+            + contestants.map(c => `
+                <label class="pool-longshot-cell">
+                    <input type="checkbox" data-qualifier-id="${c.id}" ${currentSet.has(Number(c.id)) ? 'checked' : ''} />
+                    <span class="pool-longshot-pos">#${c.id}</span>
+                    <span class="pool-longshot-name">${escapeHtml(c.name)}</span>
+                    <span class="pool-longshot-odds">${escapeHtml(c.odds || '')}</span>
+                </label>
+            `).join('')
+            + '</div>';
+
+        const saveBtn = document.getElementById('pool-longshot-save-btn');
+        const autoBtn = document.getElementById('pool-longshot-auto-btn');
+        const msg = document.getElementById('pool-longshot-msg');
+
+        if (saveBtn && !saveBtn.dataset.wired) {
+            saveBtn.dataset.wired = '1';
+            saveBtn.addEventListener('click', async () => {
+                const checked = Array.from(list.querySelectorAll('input[type=checkbox]:checked'))
+                    .map(cb => parseInt(cb.getAttribute('data-qualifier-id'), 10))
+                    .filter(Number.isFinite);
+                await savePoolConfig({ longshotQualifiers: checked });
+                msg.textContent = `Saved ${checked.length} qualifier${checked.length === 1 ? '' : 's'}.`;
+                msg.style.color = 'green';
+                renderStandings();
+            });
+        }
+        if (autoBtn && !autoBtn.dataset.wired) {
+            autoBtn.dataset.wired = '1';
+            autoBtn.addEventListener('click', () => {
+                // Check every contestant with morning-line odds >= 15:1
+                const PC = window.PoolConfig;
+                let n = 0;
+                list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+                    const id = parseInt(cb.getAttribute('data-qualifier-id'), 10);
+                    const c = contestants.find(c => Number(c.id) === id);
+                    if (!c) return;
+                    const odds = PC.parseOdds(c.odds);
+                    const qualifies = odds.decimal >= 15;
+                    cb.checked = qualifies;
+                    if (qualifies) n++;
+                });
+                msg.textContent = `Suggested ${n} qualifier${n === 1 ? '' : 's'} from current odds (15:1+). Review then click Save.`;
+                msg.style.color = '#666';
+            });
+        }
     }
 
     function renderAuditSeal() {
@@ -647,8 +711,15 @@
             `<option value="${c.id}">#${c.id} ${escapeHtml(c.name)}</option>`
         ).join('');
 
+        const isAlloc = window.PoolConfig && window.PoolConfig.isAllocationMode(currentPoolEvent.poolConfig);
+
         const inputs = questions.map(q => {
             const v = results[q.id];
+            // In allocation mode, the position-derived kinds read from poolConfig.fullFinish.
+            // Don't render a separate input for them — admin enters fullFinish below.
+            if (isAlloc && (q.kind === 'orderedTriple' || q.kind === 'unorderedTriple' || q.kind === 'orderedPair' || q.kind === 'pickInTopN' || q.kind === 'pickContestant' || q.kind === 'pickLongshot' || q.kind === 'autoProp')) {
+                return '';
+            }
             switch (q.kind) {
                 case 'pickContestant':
                     return `
@@ -676,7 +747,7 @@
                 case 'overUnder':
                     return `
                         <div class="pool-result-row">
-                            <label>${escapeHtml(q.label)}</label>
+                            <label>${escapeHtml(q.label)}${q.line ? ' (' + escapeHtml(q.line) + ')' : ''}</label>
                             <select data-result-key="${q.id}" data-kind="single">
                                 <option value="">—</option>
                                 <option value="over" ${v === 'over' ? 'selected' : ''}>Over</option>
@@ -694,19 +765,21 @@
                             </select>
                         </div>`;
                 case 'pickLongshot':
-                    // Result for longshot is the top-3 array, same as box. Display once.
-                    // Use box3's result if it exists; otherwise let admin enter top-3 here.
-                    return ''; // handled by box3 / orderedTriple — pickLongshot reads top-3 result
+                    return ''; // handled by box3 / orderedTriple
                 default:
                     return '';
             }
         }).filter(Boolean).join('');
 
-        form.innerHTML = inputs + `
+        const allocHelp = isAlloc
+            ? '<p class="pool-admin-help">In allocation mode, position-based results (Top 5, Trifecta, Exacta, Long Shot) are derived from the full finish order entered below — only enter props/over-under here.</p>'
+            : '';
+
+        form.innerHTML = allocHelp + inputs + `
             <div style="margin-top:12px;">
                 <button type="submit" class="pool-primary-btn">Save Results &amp; Compute Standings</button>
                 <button type="button" id="pool-clear-results" class="pool-secondary-btn" style="margin-left:8px;">Clear Results</button>
-                <small class="pool-admin-help" style="margin-left:10px;">Top-3 box doubles as the longshot lookup.</small>
+                ${isAlloc ? '' : '<small class="pool-admin-help" style="margin-left:10px;">Top-3 box doubles as the longshot lookup.</small>'}
             </div>
         `;
 
@@ -848,13 +921,22 @@
                 .orderBy('timestamp', 'desc')
                 .get();
             const contestants = currentPoolEvent.poolConfig.contestants || [];
+            const PC = window.PoolConfig;
+            const isAlloc = PC.isAllocationMode(currentPoolEvent.poolConfig);
             const ranked = snap.docs.map(doc => {
                 const entry = doc.data();
-                const score = window.PoolConfig.scoreSlip(currentPoolEvent.poolConfig, entry, contestants);
-                const tieBreak = window.PoolConfig.triCloseness(entry, currentPoolEvent.poolConfig);
-                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak };
+                const score = PC.scoreSlip(currentPoolEvent.poolConfig, entry, contestants);
+                const tieBreak = PC.triCloseness(entry, currentPoolEvent.poolConfig);
+                const winStake = isAlloc ? PC.totalWinningStake(entry, currentPoolEvent.poolConfig, contestants) : 0;
+                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak, winStake };
             }).sort((a, b) => {
                 if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
+                if (isAlloc) {
+                    // Allocation tiebreaker: most $ staked on winning bets, then alphabetical
+                    if (b.winStake !== a.winStake) return b.winStake - a.winStake;
+                    return a.name.localeCompare(b.name);
+                }
+                // Fixed-stake tiebreaker: trifecta-closeness ladder
                 if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
                 if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
                 if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;
@@ -866,26 +948,36 @@
                 return;
             }
 
-            const useFull = ranked.length > 0 && ranked[0].tieBreak.usedFullFinish;
-            const tieHelp = useFull
-                ? 'Cascade: bankroll → tri positional error (lower) → exact hits (higher) → exacta error (lower) → coin flip.'
-                : 'Cascade: bankroll → set match → exact match → coin flip. Add full finish order below for granular tiebreaker.';
-            const tieHeader = useFull
-                ? '<th>Tri err</th><th>Exact</th><th>Exacta err</th>'
-                : '<th>Tri match</th>';
-            const tieCell = (t) => useFull
-                ? `<td>${t.tier1}</td><td>${t.tier2}/3</td><td>${t.tier3}</td>`
-                : `<td>${t.setMatch}/3 set, ${t.exactMatch}/3 exact</td>`;
+            let tieHelp, tieHeader, tieCell;
+            if (isAlloc) {
+                tieHelp = 'Allocation pool — tiebreaker: total $ staked on winning bets, then alphabetical.';
+                tieHeader = '<th>Winning stake</th>';
+                tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td>`;
+            } else {
+                const useFull = ranked.length > 0 && ranked[0].tieBreak.usedFullFinish;
+                tieHelp = useFull
+                    ? 'Cascade: bankroll → tri positional error (lower) → exact hits (higher) → exacta error (lower) → coin flip.'
+                    : 'Cascade: bankroll → set match → exact match → coin flip. Add full finish order below for granular tiebreaker.';
+                tieHeader = useFull
+                    ? '<th>Tri err</th><th>Exact</th><th>Exacta err</th>'
+                    : '<th>Tri match</th>';
+                tieCell = (r) => {
+                    const t = r.tieBreak;
+                    return useFull
+                        ? `<td>${t.tier1}</td><td>${t.tier2}/3</td><td>${t.tier3}</td>`
+                        : `<td>${t.setMatch}/3 set, ${t.exactMatch}/3 exact</td>`;
+                };
+            }
             container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4>'
                 + `<p class="pool-admin-help" style="margin:0 0 8px;">${tieHelp}</p>`
-                + `<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th><th>Parlay</th>${tieHeader}</tr></thead><tbody>`
+                + `<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th>${isAlloc ? '' : '<th>Parlay</th>'}${tieHeader}</tr></thead><tbody>`
                 + ranked.map((r, i) => `
                     <tr>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(r.name)}</td>
-                        <td><strong>$${r.score.bankroll}</strong></td>
-                        <td>${r.score.parlay.attempted ? (r.score.parlay.hit ? `✓ +$${r.score.parlay.bonus}` : '✗') : ''}</td>
-                        ${tieCell(r.tieBreak)}
+                        <td><strong>$${r.score.bankroll.toLocaleString()}</strong></td>
+                        ${isAlloc ? '' : `<td>${r.score.parlay.attempted ? (r.score.parlay.hit ? `✓ +$${r.score.parlay.bonus}` : '✗') : ''}</td>`}
+                        ${tieCell(r)}
                     </tr>
                 `).join('') + '</tbody></table>';
         } catch (err) {

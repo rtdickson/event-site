@@ -174,6 +174,10 @@
                                     <label for="event-name">Event Name:</label>
                                     <input id="event-name" type="text" required />
 
+                                    <label for="event-code">Event Code:</label>
+                                    <input id="event-code" type="text" placeholder="e.g. pkns26" maxlength="12" pattern="[a-z0-9]{3,12}" />
+                                    <small style="color:#666; display:block; margin-bottom:10px;">3–12 lowercase letters/digits. Used for SMS routing (Phase 1) and deep links. e.g. <code>kd26</code>, <code>pkns26</code>, <code>bel26</code>, <code>nflw1</code>.</small>
+
                                     <label for="event-type" style="font-weight:600;">Event Type:</label>
                                     <select id="event-type" style="background:#fff8e1; border:2px solid #d4a843; font-weight:600; padding:8px;">
                                         <option value="gathering">Gathering (in-person, with RSVP and menu)</option>
@@ -190,8 +194,29 @@
                                         <input id="pool-closes-at" type="datetime-local" />
                                         <small style="color:#666; display:block; margin-bottom:10px;">After this time, no new picks accepted. Defaults to event time if blank.</small>
 
-                                        <label for="pool-default-stake">Default stake (fun money per pick):</label>
-                                        <input id="pool-default-stake" type="number" min="1" value="10" />
+                                        <label for="pool-bankroll-mode" style="font-weight:600;">Bankroll mode:</label>
+                                        <select id="pool-bankroll-mode" style="background:#fff8e1; border:2px solid #d4a843; padding:6px;">
+                                            <option value="fixed">Fixed stake per question (Derby-style)</option>
+                                            <option value="allocate">Allocate from bankroll (Preakness-style)</option>
+                                        </select>
+                                        <small style="color:#666; display:block; margin-bottom:10px;">Fixed = same stake on every question. Allocate = players split a budget across bets.</small>
+
+                                        <div id="pool-fixed-fields">
+                                            <label for="pool-default-stake">Default stake (fun money per pick):</label>
+                                            <input id="pool-default-stake" type="number" min="1" value="100" />
+                                        </div>
+
+                                        <div id="pool-allocate-fields" style="display:none;">
+                                            <label for="pool-bankroll-amount">Total bankroll per player:</label>
+                                            <input id="pool-bankroll-amount" type="number" min="100" step="100" value="5000" />
+                                            <label for="pool-bankroll-min">Minimum per bet:</label>
+                                            <input id="pool-bankroll-min" type="number" min="0" step="50" value="250" />
+                                            <label for="pool-bankroll-max">Maximum per bet:</label>
+                                            <input id="pool-bankroll-max" type="number" min="100" step="100" value="2000" />
+                                            <label for="pool-bankroll-increment">Step size ($ per +/- click):</label>
+                                            <input id="pool-bankroll-increment" type="number" min="1" step="50" value="100" />
+                                            <small style="color:#666; display:block; margin-bottom:10px;">Total must allocate exactly the bankroll. Mobile UI uses +/− buttons in step increments.</small>
+                                        </div>
 
                                         <p style="margin:10px 0 0; font-size:13px; color:#555;">
                                             After saving, manage horses, questions, and results in the <strong>Pool</strong> panel.
@@ -315,6 +340,17 @@
                                 <div class="pool-admin-block pool-entries-block">
                                     <h3>Entries</h3>
                                     <div id="pool-entries-list"></div>
+                                </div>
+
+                                <div class="pool-admin-block pool-longshot-block" id="pool-longshot-block" style="display:none;">
+                                    <h3>Long Shot Qualifiers</h3>
+                                    <p class="pool-admin-help">After the 4:30 ET morning line publishes, check every horse listed at 15:1 or longer. The Long Shot Top 3 bet hits if any qualifier finishes in the top 3.</p>
+                                    <div id="pool-longshot-list"></div>
+                                    <div style="margin-top:8px;">
+                                        <button type="button" id="pool-longshot-save-btn" class="pool-primary-btn" style="width:auto; padding:8px 16px; margin:0;">Save Qualifiers</button>
+                                        <button type="button" id="pool-longshot-auto-btn" class="pool-secondary-btn" style="margin-left:6px;">Auto-suggest from odds</button>
+                                        <span id="pool-longshot-msg" class="pool-admin-help" style="margin-left:10px;"></span>
+                                    </div>
                                 </div>
 
                                 <div class="pool-admin-block pool-insights-block">
