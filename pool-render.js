@@ -720,6 +720,7 @@
             case 'orderedTriple': return [null, null, null];
             case 'orderedPair':   return [null, null];
             case 'autoProp':      return null;
+            case 'pickInTopN':    return (q.pickN && q.pickN > 1) ? Array(q.pickN).fill(null) : null;
             default:              return null;
         }
     }
@@ -732,13 +733,28 @@
         let pickUI = '';
 
         switch (q.kind) {
-            case 'pickInTopN':
-                pickUI = `<label class="pool-alloc-pick-label">Pick a horse</label>
-                    <select data-pick-key="${q.id}">
-                        <option value="">— pick —</option>
-                        ${contestants.map(c => optionFor(c, v)).join('')}
-                    </select>`;
+            case 'pickInTopN': {
+                const pickN = q.pickN || 1;
+                if (pickN === 1) {
+                    pickUI = `<label class="pool-alloc-pick-label">Pick a horse to finish in the top ${q.topN || 5}</label>
+                        <select data-pick-key="${q.id}">
+                            <option value="">— pick —</option>
+                            ${contestants.map(c => optionFor(c, v)).join('')}
+                        </select>`;
+                } else {
+                    pickUI = `<label class="pool-alloc-pick-label">Pick ${pickN} horses for the top ${q.topN || 5} (any order)</label>
+                        <div class="pool-alloc-multi">
+                            ${Array.from({ length: pickN }, (_, i) => {
+                                const cur = Array.isArray(v) ? v[i] : null;
+                                return `<select data-pick-key="${q.id}" data-pick-index="${i}">
+                                    <option value="">Horse ${i + 1}</option>
+                                    ${contestants.map(c => optionFor(c, cur)).join('')}
+                                </select>`;
+                            }).join('')}
+                        </div>`;
+                }
                 break;
+            }
             case 'overUnder':
                 pickUI = `<label class="pool-alloc-pick-label">${q.line ? 'Over/Under ' + escapeHtml(q.line) : 'Over/Under'}</label>
                     <div class="pool-alloc-toggle">

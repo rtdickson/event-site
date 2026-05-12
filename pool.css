@@ -595,6 +595,14 @@
 
 .pool-alloc-triple > select { padding: 8px; }
 
+.pool-alloc-multi {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 6px;
+}
+
+.pool-alloc-multi > select { padding: 8px; }
+
 .pool-alloc-toggle {
     display: grid;
     grid-template-columns: 1fr 1fr;

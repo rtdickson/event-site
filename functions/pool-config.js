@@ -104,7 +104,8 @@
     // Payoff formula in allocation mode: if hit, payout = (stake * payoffMultiplier) + stake. If miss, payout = 0.
     function defaultPreaknessQuestions() {
         return [
-            { id: 'top5',     kind: 'pickInTopN',     label: 'Top 5 Finishers',           topN: 5,      payoffMultiplier: 1.5 },
+            // Top 5: gradient scoring — pick 5 horses; multiplier = (# in actual top 5) + (sum of their odds)
+            { id: 'top5',     kind: 'pickInTopN',     label: 'Top 5 Finishers (pick 5)',  topN: 5, pickN: 5, scoring: 'gradientOdds' },
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
             { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
@@ -293,11 +294,37 @@
             }
 
             case 'pickInTopN': {
-                // result is the top-N array; hit if pick is anywhere in it
                 if (!Array.isArray(result)) return miss;
-                const found = result.some(id => Number(id) === Number(pickValue));
-                if (!found) return miss;
-                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
+                const pickN = question.pickN || 1;
+
+                if (pickN === 1) {
+                    // Single-pick: hit if pickValue is anywhere in the top-N
+                    const found = result.some(id => Number(id) === Number(pickValue));
+                    if (!found) return miss;
+                    return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
+                }
+
+                // Multi-pick gradient: count how many of N picks are in actual top N.
+                // Multiplier = hitCount + sum(decimal_odds of hit horses). Payoff = stake × mult + stake.
+                // Zero hits = $0 (full loss).
+                const picksArr = Array.isArray(pickValue) ? pickValue : [pickValue];
+                const cleanPicks = picksArr.filter(v => v !== null && v !== undefined && v !== '');
+                if (cleanPicks.length === 0) return miss;
+                // Dedupe so picking the same horse twice doesn't double-count
+                const uniquePicks = Array.from(new Set(cleanPicks.map(Number)));
+                let hitCount = 0;
+                let oddsSum = 0;
+                const resultIds = result.map(Number);
+                uniquePicks.forEach(horseId => {
+                    if (resultIds.includes(Number(horseId))) {
+                        hitCount++;
+                        const c = contestantsById[Number(horseId)];
+                        oddsSum += parseOdds(c && c.odds).decimal;
+                    }
+                });
+                if (hitCount === 0) return miss;
+                const mult = hitCount + oddsSum;
+                return { hit: true, payoff: Math.round(stake * mult + stake) };
             }
 
             case 'orderedPair': {
