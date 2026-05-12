@@ -79,6 +79,7 @@
     // One-time migration of legacy questions to new schema (no hardcoded stake, payoffMultiplier).
     async function migrateLegacyQuestions() {
         const questions = (currentPoolEvent.poolConfig.questions || []);
+        const isAlloc = window.PoolConfig.isAllocationMode(currentPoolEvent.poolConfig);
         let dirty = false;
         const migrated = questions.map(q => {
             const next = Object.assign({}, q);
@@ -88,6 +89,13 @@
             if (next.payoff !== undefined && next.payoffMultiplier === undefined) {
                 next.payoffMultiplier = next.payoff / 10;
                 delete next.payoff;
+                dirty = true;
+            }
+            // Preakness gradient Top 5: backfill pickN if missing on pickInTopN in allocation pools
+            if (isAlloc && next.kind === 'pickInTopN' && (next.pickN === undefined || next.pickN === null)) {
+                next.pickN = 5;
+                if (!next.topN) next.topN = 5;
+                next.scoring = next.scoring || 'gradientOdds';
                 dirty = true;
             }
             return next;
