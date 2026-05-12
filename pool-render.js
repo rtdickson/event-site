@@ -100,7 +100,11 @@
             showBtn.addEventListener('click', () => {
                 if (mode !== 'edit') return;
                 document.getElementById('pool-form-wrap').style.display = 'block';
-                renderForm();
+                if (window.PoolConfig.isAllocationMode(activeEvent.poolConfig)) {
+                    renderAllocationForm();
+                } else {
+                    renderForm();
+                }
                 document.getElementById('pool-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
                 document.getElementById('pool-phone').focus();
             });
@@ -478,16 +482,21 @@
         return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}</ul>`;
     }
 
-    function formatPickValue(q, v, contestantsById) {
+    function formatPickValue(q, rawV, contestantsById) {
+        // Unwrap allocation-mode { value, stake } if needed
+        const v = (rawV && typeof rawV === 'object' && !Array.isArray(rawV) && 'value' in rawV) ? rawV.value : rawV;
         if (Array.isArray(v)) {
             return v.filter(x => x != null).map(id => {
                 const c = contestantsById[Number(id)];
                 return c ? `#${c.id} ${c.name}` : `#${id}`;
             }).join(' · ');
         }
-        if (q.kind === 'pickContestant' || q.kind === 'pickLongshot') {
+        if (q.kind === 'pickContestant' || q.kind === 'pickLongshot' || q.kind === 'pickInTopN') {
             const c = contestantsById[Number(v)];
             return c ? `#${c.id} ${c.name}` : `#${v}`;
+        }
+        if (q.kind === 'autoProp') {
+            return '(prop bet)';
         }
         return String(v);
     }
@@ -616,10 +625,17 @@
                     locks: Array.isArray(found.data.locks) ? found.data.locks.slice() : []
                 };
                 if (contactName) currentEntry.name = contactName; // prefer contact name
-                renderForm();
+                if (window.PoolConfig.isAllocationMode(activeEvent.poolConfig)) {
+                    renderAllocationForm();
+                } else {
+                    renderForm();
+                }
                 msg.textContent = `Welcome back. Loaded your existing slip — edit and submit to update.`;
                 msg.style.color = 'green';
-                document.getElementById('pool-submit').textContent = 'Update picks';
+                const submitBtn = document.getElementById('pool-submit');
+                if (submitBtn && !window.PoolConfig.isAllocationMode(activeEvent.poolConfig)) {
+                    submitBtn.textContent = 'Update picks';
+                }
             } else {
                 existingEntryId = null;
                 msg.textContent = contactName ? `Hi ${contactName} — fill in your picks below.` : '';
@@ -628,6 +644,278 @@
             }
         } catch (err) {
             console.error('Phone lookup error:', err);
+        }
+    }
+
+    // ----- Allocation-mode form (Preakness) -----
+    // Mobile-first plus/minus cards. One card per bet. Persistent header with remaining balance.
+    // Submit disabled until allocation is exactly $bankrollAmount and all picks are valid.
+    function renderAllocationForm() {
+        const container = document.getElementById('pool-questions');
+        if (!container) return;
+        const config = activeEvent.poolConfig;
+        const contestants = config.contestants || [];
+        const questions = config.questions || [];
+        const constraints = config.allocationConstraints || { min: 250, max: 2000, increment: 100 };
+        const bankroll = config.bankrollAmount || 0;
+
+        // Ensure each pick has a stake (start at min if not present)
+        for (const q of questions) {
+            const raw = currentEntry.picks[q.id];
+            if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+                currentEntry.picks[q.id] = { value: getInitialPickValue(q), stake: 0 };
+            }
+        }
+
+        // Replace the summary line with allocation-specific UI
+        const summaryEl = document.querySelector('.pool-summary');
+        if (summaryEl) summaryEl.style.display = 'none';
+
+        // Header: remaining + progress bar (sticky at top of form)
+        const headerHtml = `
+            <div class="pool-alloc-header" id="pool-alloc-header">
+                <div class="pool-alloc-remaining">
+                    <span id="pool-alloc-remaining-amt">$${bankroll.toLocaleString()}</span> remaining
+                </div>
+                <div class="pool-alloc-progress">
+                    <div class="pool-alloc-progress-fill" id="pool-alloc-progress-fill" style="width:0%"></div>
+                </div>
+                <div class="pool-alloc-help">$${constraints.min} min / $${constraints.max.toLocaleString()} max per bet. Total must be exactly $${bankroll.toLocaleString()}.</div>
+            </div>
+        `;
+
+        const cards = questions.map(q => renderAllocCard(q, contestants, constraints)).join('');
+        container.innerHTML = headerHtml + `<div class="pool-alloc-cards">${cards}</div>`;
+
+        wireAllocCards(constraints, bankroll);
+
+        // Update submit button text for allocation mode
+        const submitBtn = document.getElementById('pool-submit');
+        if (submitBtn) {
+            submitBtn.classList.add('pool-alloc-submit');
+            submitBtn.textContent = 'Lock In My Bets — $0 / $' + bankroll.toLocaleString();
+        }
+
+        // Hydrate from currentEntry
+        document.getElementById('pool-name').value = currentEntry.name || '';
+        document.getElementById('pool-phone').value = currentEntry.phone || '';
+        const phoneInput = document.getElementById('pool-phone');
+        phoneInput.addEventListener('blur', onPhoneEntered);
+
+        updateAllocSummary(constraints, bankroll);
+    }
+
+    function getInitialPickValue(q) {
+        switch (q.kind) {
+            case 'orderedTriple': return [null, null, null];
+            case 'orderedPair':   return [null, null];
+            case 'autoProp':      return null;
+            default:              return null;
+        }
+    }
+
+    function renderAllocCard(q, contestants, constraints) {
+        const pick = currentEntry.picks[q.id] || { value: null, stake: 0 };
+        const stake = pick.stake || 0;
+        const v = pick.value;
+        const mult = q.payoffMultiplier || 1;
+        let pickUI = '';
+
+        switch (q.kind) {
+            case 'pickInTopN':
+                pickUI = `<label class="pool-alloc-pick-label">Pick a horse</label>
+                    <select data-pick-key="${q.id}">
+                        <option value="">— pick —</option>
+                        ${contestants.map(c => optionFor(c, v)).join('')}
+                    </select>`;
+                break;
+            case 'overUnder':
+                pickUI = `<label class="pool-alloc-pick-label">${q.line ? 'Over/Under ' + escapeHtml(q.line) : 'Over/Under'}</label>
+                    <div class="pool-alloc-toggle">
+                        <button type="button" class="pool-alloc-toggle-btn ${v === 'over' ? 'active' : ''}" data-pick-key="${q.id}" data-value="over">Over</button>
+                        <button type="button" class="pool-alloc-toggle-btn ${v === 'under' ? 'active' : ''}" data-pick-key="${q.id}" data-value="under">Under</button>
+                    </div>`;
+                break;
+            case 'orderedPair':
+                pickUI = `<label class="pool-alloc-pick-label">Pick 1st &amp; 2nd</label>
+                    <div class="pool-alloc-triple">
+                        ${[0,1].map(i => `<select data-pick-key="${q.id}" data-pick-index="${i}">
+                            <option value="">${['1st','2nd'][i]}</option>
+                            ${contestants.map(c => optionFor(c, Array.isArray(v) ? v[i] : null)).join('')}
+                        </select>`).join('')}
+                    </div>`;
+                break;
+            case 'orderedTriple':
+                pickUI = `<label class="pool-alloc-pick-label">Pick 1st, 2nd, 3rd</label>
+                    <div class="pool-alloc-triple">
+                        ${[0,1,2].map(i => `<select data-pick-key="${q.id}" data-pick-index="${i}">
+                            <option value="">${['1st','2nd','3rd'][i]}</option>
+                            ${contestants.map(c => optionFor(c, Array.isArray(v) ? v[i] : null)).join('')}
+                        </select>`).join('')}
+                    </div>`;
+                break;
+            case 'autoProp':
+                pickUI = `<div class="pool-alloc-prop-desc">No pick — bet auto-hits if any 15:1+ longshot finishes in the top 3.</div>`;
+                break;
+            default:
+                pickUI = '';
+        }
+
+        return `
+            <div class="pool-alloc-card" data-q="${q.id}" id="pool-alloc-card-${q.id}">
+                <div class="pool-alloc-card-head">
+                    <div class="pool-alloc-card-title">${escapeHtml(q.label)}</div>
+                    <div class="pool-alloc-card-mult">${mult}×</div>
+                </div>
+                ${pickUI}
+                <div class="pool-alloc-stake-row">
+                    <button type="button" class="pool-alloc-step pool-alloc-minus" data-q="${q.id}" aria-label="Decrease by $${constraints.increment}">−</button>
+                    <div class="pool-alloc-amount" id="pool-alloc-amount-${q.id}">$${stake.toLocaleString()}</div>
+                    <button type="button" class="pool-alloc-step pool-alloc-plus" data-q="${q.id}" aria-label="Increase by $${constraints.increment}">+</button>
+                </div>
+                <div class="pool-alloc-status" id="pool-alloc-status-${q.id}"></div>
+            </div>
+        `;
+    }
+
+    function wireAllocCards(constraints, bankroll) {
+        const container = document.getElementById('pool-questions');
+        if (!container) return;
+
+        // Pick value change (selects + toggles)
+        container.querySelectorAll('[data-pick-key]').forEach(el => {
+            const eventName = el.tagName === 'BUTTON' ? 'click' : 'change';
+            el.addEventListener(eventName, () => {
+                const key = el.getAttribute('data-pick-key');
+                const idx = el.getAttribute('data-pick-index');
+                const value = el.value !== undefined && el.value !== '' ? parseValue(el.value)
+                            : el.getAttribute('data-value');
+                if (!currentEntry.picks[key] || typeof currentEntry.picks[key] !== 'object' || Array.isArray(currentEntry.picks[key])) {
+                    currentEntry.picks[key] = { value: getInitialPickValue(getQuestionById(key)), stake: 0 };
+                }
+                if (idx !== null && idx !== undefined) {
+                    if (!Array.isArray(currentEntry.picks[key].value)) {
+                        currentEntry.picks[key].value = getInitialPickValue(getQuestionById(key));
+                    }
+                    currentEntry.picks[key].value[parseInt(idx, 10)] = parseValue(el.value);
+                } else if (el.tagName === 'BUTTON') {
+                    // toggle button — set value to data-value, mark active state
+                    currentEntry.picks[key].value = value;
+                    container.querySelectorAll(`.pool-alloc-toggle-btn[data-pick-key="${key}"]`).forEach(b => {
+                        b.classList.toggle('active', b.getAttribute('data-value') === String(value));
+                    });
+                } else {
+                    currentEntry.picks[key].value = value;
+                }
+                updateAllocSummary(constraints, bankroll);
+            });
+        });
+
+        // Plus / minus buttons
+        container.querySelectorAll('.pool-alloc-step').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const qid = btn.getAttribute('data-q');
+                const direction = btn.classList.contains('pool-alloc-plus') ? 1 : -1;
+                stepStake(qid, direction, constraints, bankroll);
+            });
+        });
+    }
+
+    function getQuestionById(qid) {
+        return (activeEvent.poolConfig.questions || []).find(q => q.id === qid) || {};
+    }
+
+    function stepStake(qid, direction, constraints, bankroll) {
+        const pick = currentEntry.picks[qid];
+        const cur = (pick && pick.stake) || 0;
+        const increment = constraints.increment || 100;
+        const max = constraints.max || bankroll;
+        const proposed = cur + (direction * increment);
+
+        if (proposed < 0) return;
+        if (proposed > max) {
+            flashCard(qid, 'over-max');
+            return;
+        }
+
+        // Compute total if we apply this change
+        const allocated = totalAllocated() - cur + proposed;
+        if (allocated > bankroll) {
+            flashCard(qid, 'over-bankroll');
+            return;
+        }
+
+        currentEntry.picks[qid].stake = proposed;
+        document.getElementById('pool-alloc-amount-' + qid).textContent = '$' + proposed.toLocaleString();
+        updateAllocSummary(constraints, bankroll);
+    }
+
+    function flashCard(qid, reason) {
+        const card = document.getElementById('pool-alloc-card-' + qid);
+        const header = document.getElementById('pool-alloc-header');
+        const target = reason === 'over-bankroll' ? header : card;
+        if (!target) return;
+        target.classList.add('flash-red');
+        setTimeout(() => target.classList.remove('flash-red'), 320);
+    }
+
+    function totalAllocated() {
+        const questions = activeEvent.poolConfig.questions || [];
+        return questions.reduce((sum, q) => {
+            const p = currentEntry.picks[q.id];
+            return sum + ((p && p.stake) || 0);
+        }, 0);
+    }
+
+    function pickHasRequiredValue(q) {
+        // autoProp doesn't require a value
+        if (q.kind === 'autoProp') return true;
+        const v = currentEntry.picks[q.id] && currentEntry.picks[q.id].value;
+        if (v === null || v === undefined || v === '') return false;
+        if (Array.isArray(v)) return v.every(x => x !== null && x !== undefined && x !== '');
+        return true;
+    }
+
+    function updateAllocSummary(constraints, bankroll) {
+        const allocated = totalAllocated();
+        const remaining = bankroll - allocated;
+        const remainingEl = document.getElementById('pool-alloc-remaining-amt');
+        if (remainingEl) remainingEl.textContent = '$' + remaining.toLocaleString();
+        const fill = document.getElementById('pool-alloc-progress-fill');
+        if (fill) fill.style.width = Math.max(0, Math.min(100, (allocated / bankroll) * 100)) + '%';
+
+        // Per-card status
+        const questions = activeEvent.poolConfig.questions || [];
+        questions.forEach(q => {
+            const card = document.getElementById('pool-alloc-card-' + q.id);
+            const status = document.getElementById('pool-alloc-status-' + q.id);
+            if (!card || !status) return;
+            const stake = (currentEntry.picks[q.id] && currentEntry.picks[q.id].stake) || 0;
+            const hasPick = pickHasRequiredValue(q);
+
+            card.classList.remove('pool-alloc-card-under', 'pool-alloc-card-ok', 'pool-alloc-card-max', 'pool-alloc-card-needpick');
+            if (stake < constraints.min) {
+                card.classList.add('pool-alloc-card-under');
+                status.textContent = `Need at least $${constraints.min}`;
+            } else if (!hasPick) {
+                card.classList.add('pool-alloc-card-needpick');
+                status.textContent = 'Pick a horse before locking in';
+            } else if (stake >= constraints.max) {
+                card.classList.add('pool-alloc-card-max');
+                status.textContent = `Maxed at $${constraints.max.toLocaleString()}`;
+            } else {
+                card.classList.add('pool-alloc-card-ok');
+                status.textContent = `✓ Locked in $${stake.toLocaleString()}`;
+            }
+        });
+
+        // Submit button
+        const submitBtn = document.getElementById('pool-submit');
+        if (submitBtn) {
+            submitBtn.textContent = 'Lock In My Bets — $' + allocated.toLocaleString() + ' / $' + bankroll.toLocaleString();
+            const valid = window.PoolConfig.validateAllocation(currentEntry.picks, activeEvent.poolConfig);
+            const allPicked = questions.every(pickHasRequiredValue);
+            submitBtn.disabled = !(valid.ok && allPicked);
         }
     }
 
@@ -793,6 +1081,20 @@
         }
         currentEntry.name = name;
         currentEntry.phone = phone;
+
+        // Allocation mode: validate bankroll spend + required picks before save
+        if (window.PoolConfig.isAllocationMode(activeEvent.poolConfig)) {
+            const v = window.PoolConfig.validateAllocation(currentEntry.picks, activeEvent.poolConfig);
+            if (!v.ok) {
+                flashMessage(v.errors[0], 'red');
+                return;
+            }
+            const allPicked = (activeEvent.poolConfig.questions || []).every(pickHasRequiredValue);
+            if (!allPicked) {
+                flashMessage('Pick a horse for every bet before locking in.', 'red');
+                return;
+            }
+        }
 
         // Capture state before save for notification
         const isNewEntry = !existingEntryId;
