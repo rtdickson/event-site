@@ -20,7 +20,7 @@ function isUpcoming(data) {
     return endOfEventDay.getTime() > Date.now();
 }
 
-const RECENT_RESULTS_DAYS = 14;
+const RECENT_RESULTS_DAYS = 4;
 
 function isRecentResult(data) {
     const d = eventDate(data);
