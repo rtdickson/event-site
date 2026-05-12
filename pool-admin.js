@@ -106,10 +106,12 @@
                 await db.collection('events').doc(currentPoolEventId).update({
                     'poolConfig.questions': migrated
                 });
-                console.log('Migrated pool questions to new stake/payoff schema');
+                console.log('[pool-admin] Migrated questions:', migrated);
             } catch (err) {
-                console.warn('Migration save failed (non-fatal):', err);
+                console.warn('[pool-admin] Migration save failed (non-fatal):', err);
             }
+        } else {
+            console.log('[pool-admin] No question migration needed (everything up to date).');
         }
     }
 

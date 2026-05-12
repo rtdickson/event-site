@@ -295,7 +295,13 @@
 
             case 'pickInTopN': {
                 if (!Array.isArray(result)) return miss;
-                const pickN = question.pickN || 1;
+                // Treat as gradient if the pick value is itself an array, OR if pickN is set >1,
+                // OR if we're in allocation mode (where gradient is the default).
+                const explicitPickN = question.pickN;
+                const inferGradient = explicitPickN > 1
+                    || (Array.isArray(pickValue) && pickValue.length > 1)
+                    || (alloc && !explicitPickN);
+                const pickN = explicitPickN || (inferGradient ? (Array.isArray(pickValue) ? pickValue.length : 5) : 1);
 
                 if (pickN === 1) {
                     // Single-pick: hit if pickValue is anywhere in the top-N

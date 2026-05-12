@@ -833,7 +833,10 @@
 
         switch (q.kind) {
             case 'pickInTopN': {
-                const pickN = q.pickN || 1;
+                // Default to gradient (5 picks) in allocation pools if pickN wasn't set on the saved
+                // question — covers events created before the gradient Top 5 change landed.
+                const isAlloc = window.PoolConfig.isAllocationMode(activeEvent.poolConfig);
+                const pickN = q.pickN || (isAlloc ? 5 : 1);
                 if (pickN === 1) {
                     pickUI = `<label class="pool-alloc-pick-label">Pick a horse to finish in the top ${q.topN || 5}</label>
                         <select data-pick-key="${q.id}">
