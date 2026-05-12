@@ -664,8 +664,17 @@
     font-variant-numeric: tabular-nums;
 }
 
-.pool-alloc-status {
+.pool-alloc-purse {
     margin-top: 8px;
+    font-size: 13px;
+    color: var(--accent, #b8860b);
+    text-align: center;
+    font-weight: 500;
+    min-height: 17px;
+}
+
+.pool-alloc-status {
+    margin-top: 4px;
     font-size: 12px;
     color: #888;
     text-align: center;

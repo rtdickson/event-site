@@ -667,11 +667,13 @@
         const constraints = config.allocationConstraints || { min: 250, max: 2000, increment: 100 };
         const bankroll = config.bankrollAmount || 0;
 
-        // Ensure each pick has a stake (start at min if not present)
+        // Ensure each pick has a stake — start at the minimum (e.g. $250) so the bankroll
+        // begins fully allocated and players adjust UP from there.
+        const initialStake = constraints.min || 0;
         for (const q of questions) {
             const raw = currentEntry.picks[q.id];
             if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-                currentEntry.picks[q.id] = { value: getInitialPickValue(q), stake: 0 };
+                currentEntry.picks[q.id] = { value: getInitialPickValue(q), stake: initialStake };
             }
         }
 
@@ -781,6 +783,7 @@
                     <div class="pool-alloc-amount" id="pool-alloc-amount-${q.id}">$${stake.toLocaleString()}</div>
                     <button type="button" class="pool-alloc-step pool-alloc-plus" data-q="${q.id}" aria-label="Increase by $${constraints.increment}">+</button>
                 </div>
+                <div class="pool-alloc-purse" id="pool-alloc-purse-${q.id}"></div>
                 <div class="pool-alloc-status" id="pool-alloc-status-${q.id}"></div>
             </div>
         `;
@@ -892,14 +895,22 @@
         const fill = document.getElementById('pool-alloc-progress-fill');
         if (fill) fill.style.width = Math.max(0, Math.min(100, (allocated / bankroll) * 100)) + '%';
 
-        // Per-card status
+        // Per-card status + potential purse
         const questions = activeEvent.poolConfig.questions || [];
         questions.forEach(q => {
             const card = document.getElementById('pool-alloc-card-' + q.id);
             const status = document.getElementById('pool-alloc-status-' + q.id);
+            const purse = document.getElementById('pool-alloc-purse-' + q.id);
             if (!card || !status) return;
             const stake = (currentEntry.picks[q.id] && currentEntry.picks[q.id].stake) || 0;
             const hasPick = pickHasRequiredValue(q);
+
+            // Potential purse: (stake × multiplier) + stake — what this bet pays if it hits
+            if (purse) {
+                const mult = q.payoffMultiplier || 1;
+                const potential = stake * mult + stake;
+                purse.textContent = stake > 0 ? `If this hits: $${potential.toLocaleString()}` : '';
+            }
 
             card.classList.remove('pool-alloc-card-under', 'pool-alloc-card-ok', 'pool-alloc-card-max', 'pool-alloc-card-needpick');
             if (stake < constraints.min) {
