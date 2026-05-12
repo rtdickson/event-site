@@ -32,8 +32,58 @@
                 <p class="math-intro">Everything that decides a pool — payouts, parlay bonuses, and tiebreakers — is published here so the standings are fully auditable. <a href="javascript:history.back()">← Back</a></p>
 
                 <section class="math-section">
-                    <h3>1. Payouts per pick</h3>
-                    <p>Each pick has a fixed stake (set per pool, e.g. $1,000 fun money). Payoff depends on the pick type:</p>
+                    <h3>1. Two pool formats</h3>
+                    <p>Horse racing pools come in two flavors depending on which event you're looking at:</p>
+                    <ul>
+                        <li><strong>Allocation pool</strong> (Preakness onward — the new default) — every player gets a fixed bankroll (e.g. $5,000) to split across 5 bets however they want, subject to minimums and maximums.</li>
+                        <li><strong>Fixed-stake pool</strong> (Derby 2026 — legacy) — every pick has the same fixed stake; players add a parlay lock for bonus action.</li>
+                    </ul>
+                    <p>The rest of this page covers both. If you're here for Preakness, skip to section 2. If you're here for Derby, jump to section 4.</p>
+                </section>
+
+                <section class="math-section">
+                    <h3>2. Allocation pool — Preakness format</h3>
+                    <p>You get a fixed bankroll (default $5,000) to allocate across 5 bets. Each bet must have <strong>between $250 and $2,000</strong> and the five must <strong>sum to exactly $5,000</strong>. Adjust with the +/− buttons on the public page.</p>
+
+                    <h4>The 5 bets and their payoffs</h4>
+                    <table class="math-table">
+                        <thead><tr><th>Bet</th><th>What it is</th><th>Payoff if hit</th></tr></thead>
+                        <tbody>
+                            <tr><td>Top 5 Finishers</td><td>Pick 5 horses (any order). Payoff scales by how many landed in actual top 5, and rewards picking longshots.</td><td>stake × (# hit + sum of decimal odds of hit horses) + stake</td></tr>
+                            <tr><td>Time Over/Under</td><td>Over or under the posted winning-time line (default 1:58.00)</td><td>stake × 2 + stake</td></tr>
+                            <tr><td>Trifecta</td><td>Pick the top 3 in exact order</td><td>stake × 4 + stake</td></tr>
+                            <tr><td>Exacta</td><td>Pick the top 2 in exact order</td><td>stake × 5 + stake</td></tr>
+                            <tr><td>Long Shot Top 3</td><td>Auto-hit prop — bet wins if <em>any</em> horse listed at 15:1+ on the 4:30 ET morning line finishes top 3. No pick required.</td><td>stake × 6 + stake</td></tr>
+                        </tbody>
+                    </table>
+                    <p class="math-note">Each payoff formula returns your stake plus the multiplied profit. Miss the bet → $0 (lose the stake).</p>
+
+                    <h4>Top 5 scoring detail (the gradient bet)</h4>
+                    <p>The Top 5 bet rewards both <em>spread</em> (more correct horses = bigger multiplier) and <em>conviction on longshots</em> (a 25/1 horse hitting adds 25 to the multiplier, vs. 5 for a 5/1).</p>
+                    <p class="math-formula">multiplier = (# correct picks) + (sum of decimal odds of correct picks)</p>
+                    <p>Example at $1,000 stake, actual top 5 = [#19, #1, #22, #12, #6]:</p>
+                    <table class="math-table">
+                        <thead><tr><th>Picks landed</th><th>Odds of hits</th><th>Multiplier</th><th>Payout</th></tr></thead>
+                        <tbody>
+                            <tr><td>1 of 5 (just #1)</td><td>5/1</td><td>1 + 5 = 6</td><td>$7,000</td></tr>
+                            <tr><td>3 of 5</td><td>5/1, 25/1, 20/1</td><td>3 + 50 = 53</td><td>$54,000</td></tr>
+                            <tr><td>5 of 5</td><td>full mix</td><td>5 + sum of all 5</td><td>often $50K–$100K+</td></tr>
+                        </tbody>
+                    </table>
+                </section>
+
+                <section class="math-section">
+                    <h3>3. Allocation pool — tiebreaker</h3>
+                    <p>If two or more players tie on final bankroll:</p>
+                    <ol>
+                        <li><strong>Total $ staked on winning bets</strong> — whoever put more money on the bets that hit wins. Rewards conviction.</li>
+                        <li><strong>Name alphabetical</strong> — final fallback, so the system is always deterministic.</li>
+                    </ol>
+                </section>
+
+                <section class="math-section">
+                    <h3>4. Fixed-stake pool — Derby format (legacy)</h3>
+                    <p>Every pick has a fixed stake (e.g. $1,000). Payoff depends on the pick type:</p>
                     <table class="math-table">
                         <thead><tr><th>Pick type</th><th>Payoff if hit</th><th>Example at $1,000 stake</th></tr></thead>
                         <tbody>
@@ -45,48 +95,38 @@
                         </tbody>
                     </table>
                     <p class="math-note">Odds are <em>pari-mutuel</em> — payouts use the odds at race time (last imported), not when you locked in your pick. Same as the actual track.</p>
-                </section>
 
-                <section class="math-section">
-                    <h3>2. Parlay bonus</h3>
-                    <p>You can lock 2 or 3 of your single-horse picks (Win, Place, or Show) into a parlay. If <strong>all locked picks hit</strong>:</p>
+                    <h4>Parlay bonus (fixed-stake only)</h4>
+                    <p>You can lock 2 or 3 of your single-horse picks (Win, Place, Show) into a parlay:</p>
                     <p class="math-formula">bonus = stake × (odds₁ × odds₂ × odds₃)</p>
-                    <p>Example: lock Win at 8/1 and Place at 5/2 with $1,000 stake. Both hit → bonus = 1,000 × 8 × 2.5 = <strong>$20,000</strong>. Miss any leg and the bonus is zero (individual picks still pay normally).</p>
+                    <p>Example: lock Win at 8/1 and Place at 5/2. Both hit → bonus = 1,000 × 8 × 2.5 = <strong>$20,000</strong>. Miss any leg → bonus is zero (individual picks still pay normally).</p>
                 </section>
 
                 <section class="math-section">
-                    <h3>3. Bankroll = total winnings</h3>
-                    <p>Add up payouts across all picks that hit, plus any parlay bonus. That's your bankroll. Highest bankroll wins the pool.</p>
-                </section>
-
-                <section class="math-section">
-                    <h3>4. Tiebreaker ladder</h3>
+                    <h3>5. Fixed-stake — tiebreaker ladder (Derby)</h3>
                     <p>If two or more players tie on bankroll, the tiebreaker cascade kicks in. Each tier resolves first; if still tied, falls through to the next tier.</p>
 
                     <div class="math-tier"><strong>Tier 1 — Trifecta position error</strong> (lowest wins)
-                        <p>For each of your 3 trifecta picks: <code>error = |slot − actual_finish_position|</code>. Slot is 1, 2, or 3 (where you put the horse). Actual finish position is 1 through N (the whole field). Scratched/DNF horses get a 20-point penalty. Sum the three errors.</p>
+                        <p>For each of your 3 trifecta picks: <code>error = |slot − actual_finish_position|</code>. Slot is 1, 2, or 3. Scratched/DNF horses get a 20-point penalty. Sum the three errors.</p>
                     </div>
-
                     <div class="math-tier"><strong>Tier 2 — Exact position hits</strong> (most wins)
                         <p>Count how many of your 3 trifecta picks finished in the <em>exact</em> position you predicted. Range 0–3.</p>
                     </div>
-
                     <div class="math-tier"><strong>Tier 3 — Exacta error</strong> (lowest wins)
-                        <p>Same calculation as Tier 1 but only for your <em>first two</em> trifecta picks. Tighter test of who came closer on the top-2 finishers.</p>
+                        <p>Same as Tier 1 but only for your first two trifecta picks.</p>
                     </div>
-
                     <div class="math-tier"><strong>Tier 4 — Coin flip</strong>
-                        <p>If still tied after all three tiers, the system surfaces a coin flip — the admin makes a manual call.</p>
+                        <p>If still tied after all three tiers, admin makes a manual call.</p>
                     </div>
                 </section>
 
                 <section id="math-worked-example" class="math-section" style="display:none;">
-                    <h3>5. Worked example — this pool</h3>
+                    <h3>6. Worked example — this pool</h3>
                     <div id="math-worked-content">Loading…</div>
                 </section>
 
                 <section class="math-section">
-                    <h3>6. Audit seal</h3>
+                    <h3>7. Audit seal</h3>
                     <p>Just before the race lock, the admin "seals" all entries. We compute a SHA-256 hash of the entry snapshot (canonical JSON, sorted keys, no timestamps) and publish it. Anyone can click <strong>Verify integrity</strong> on the event page to re-fetch the snapshot, recompute the hash, and confirm nothing was changed after seal time.</p>
                     <p class="math-note">If picks were tampered with after sealing, the hash wouldn't match — verify would fail. The proof requires no trust in the platform or the admin.</p>
                 </section>

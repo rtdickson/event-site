@@ -298,37 +298,63 @@ async function handleMyPicks(From, activeEvent, res) {
         const locks = entry.locks || [];
         const questions = config.questions || [];
 
-        const formatPick = (q, v) => {
+        const isAlloc = PoolConfig.isAllocationMode(config);
+
+        const formatPick = (q, rawV) => {
+            const v = PoolConfig.getPickValue(rawV);
             if (Array.isArray(v)) {
                 return v.filter(x => x != null).map(id => {
                     const c = cById[Number(id)];
                     return c ? `#${c.id} ${c.name}` : `#${id}`;
-                }).join('-');
+                }).join(', ');
             }
-            if (q.kind === 'pickContestant' || q.kind === 'pickLongshot') {
+            if (q.kind === 'pickContestant' || q.kind === 'pickLongshot' || q.kind === 'pickInTopN') {
                 const c = cById[Number(v)];
                 return c ? `#${c.id} ${c.name}` : `#${v}`;
+            }
+            if (q.kind === 'autoProp') {
+                return '(auto-prop)';
             }
             return String(v);
         };
 
-        const lines = [];
-        questions.forEach(q => {
-            const v = picks[q.id];
-            if (v === null || v === undefined || v === '') return;
-            if (Array.isArray(v) && !v.some(x => x != null && x !== '')) return;
-            const lock = locks.includes(q.id) ? ' 🔒' : '';
-            // Short label per question for SMS
-            const label = q.id === 'win' ? 'Win'
+        const shortLabel = (q) => {
+            return q.id === 'win' ? 'Win'
                 : q.id === 'place' ? '2nd'
                 : q.id === 'show' ? '3rd'
                 : q.id === 'tri' ? 'Tri'
                 : q.id === 'box3' ? 'Box'
                 : q.id === 'longshot' ? 'Longshot'
                 : q.id === 'time' ? 'Time'
+                : q.id === 'timeou' ? 'Time O/U'
                 : q.id === 'fav' ? 'Fav top-3'
+                : q.id === 'top5' ? 'Top 5'
+                : q.id === 'exacta' ? 'Exacta'
                 : q.label || q.id;
-            lines.push(`${label}${lock}: ${formatPick(q, v)}`);
+        };
+
+        const lines = [];
+        questions.forEach(q => {
+            const rawV = picks[q.id];
+            const v = PoolConfig.getPickValue(rawV);
+            const stake = PoolConfig.getPickStake(rawV);
+            const isAutoProp = q.kind === 'autoProp';
+            // For non-autoProp, skip if no pick. For autoProp, include if staked (allocation) or always (fixed)
+            if (!isAutoProp) {
+                if (v === null || v === undefined || v === '') return;
+                if (Array.isArray(v) && !v.some(x => x != null && x !== '')) return;
+            } else if (isAlloc && (stake === null || stake <= 0)) {
+                return;
+            }
+            const lock = locks.includes(q.id) ? ' 🔒' : '';
+            const label = shortLabel(q);
+            if (isAlloc) {
+                const stakeStr = `$${(stake || 0).toLocaleString()}`;
+                const pickStr = isAutoProp ? '' : ' — ' + formatPick(q, rawV);
+                lines.push(`${label} (${stakeStr})${pickStr}`);
+            } else {
+                lines.push(`${label}${lock}: ${formatPick(q, rawV)}`);
+            }
         });
 
         if (lines.length === 0) {
@@ -342,10 +368,19 @@ async function handleMyPicks(From, activeEvent, res) {
 
         const max = PoolConfig.maxPossiblePayoff(config, entry, contestants);
         let body = `Your picks for ${activeEvent.name}:\n` + lines.join('\n');
-        if (locks.length >= 2) {
+        if (locks.length >= 2 && !isAlloc) {
             body += `\n\n${locks.length}-leg parlay → bonus if all hit`;
         }
-        body += `\nPotential purse: $${max.toLocaleString()}`;
+        if (isAlloc) {
+            const totalStaked = questions.reduce((s, q) => {
+                const st = PoolConfig.getPickStake(picks[q.id]);
+                return s + (st || 0);
+            }, 0);
+            body += `\n\nTotal staked: $${totalStaked.toLocaleString()}`;
+            body += `\nMax possible: $${max.toLocaleString()}`;
+        } else {
+            body += `\nPotential purse: $${max.toLocaleString()}`;
+        }
 
         await twilioClient.messages.create({
             body,
@@ -423,19 +458,27 @@ async function handlePoolStats(From, activeEvent, res) {
             return res.status(200).send('<Response></Response>');
         }
 
+        const isAlloc = PoolConfig.isAllocationMode(config);
         const byPurse = enriched.slice().sort((a, b) => b.max - a.max);
-        const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
         const total = enriched.reduce((s, e) => s + e.max, 0);
 
         let body = `${activeEvent.name} (${enriched.length} ${enriched.length === 1 ? 'player' : 'players'})\n`;
-        body += `Combined potential: $${total.toLocaleString()}\n\n`;
-        body += `Potential purses:\n`;
+        body += `Combined max possible: $${total.toLocaleString()}\n\n`;
+        body += isAlloc ? `Max possible per player (all bets hit):\n` : `Potential purses:\n`;
         for (let i = 0; i < byPurse.length; i++) {
             const e = byPurse[i];
-            body += `${i+1}. ${e.name}: $${e.max.toLocaleString()} (${PoolConfig.formatOddsAgainst(e.prob)})\n`;
+            if (isAlloc) {
+                // Gradient/multi-bet — odds heuristic isn't meaningful, drop it
+                body += `${i+1}. ${e.name}: $${e.max.toLocaleString()}\n`;
+            } else {
+                body += `${i+1}. ${e.name}: $${e.max.toLocaleString()} (${PoolConfig.formatOddsAgainst(e.prob)})\n`;
+            }
         }
-        body += `\nMost likely: ${byProb[0].name} (${PoolConfig.formatOddsAgainst(byProb[0].prob)})\n`;
-        body += `Longest shot: ${byProb[byProb.length-1].name} (${PoolConfig.formatOddsAgainst(byProb[byProb.length-1].prob)})`;
+        if (!isAlloc) {
+            const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
+            body += `\nMost likely: ${byProb[0].name} (${PoolConfig.formatOddsAgainst(byProb[0].prob)})\n`;
+            body += `Longest shot: ${byProb[byProb.length-1].name} (${PoolConfig.formatOddsAgainst(byProb[byProb.length-1].prob)})`;
+        }
 
         await twilioClient.messages.create({
             body,

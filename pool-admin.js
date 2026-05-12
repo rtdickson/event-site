@@ -123,9 +123,37 @@
         renderResultsForm();
         renderStandings();
         renderInsights();
+        renderOverUnderLine();
         renderLongshotQualifiers();
         renderAuditSeal();
         renderBroadcast();
+    }
+
+    function renderOverUnderLine() {
+        const block = document.getElementById('pool-overunder-block');
+        if (!block) return;
+        const questions = currentPoolEvent.poolConfig.questions || [];
+        const ouQ = questions.find(q => q.kind === 'overUnder');
+        if (!ouQ) { block.style.display = 'none'; return; }
+        block.style.display = 'block';
+
+        const input = document.getElementById('pool-overunder-input');
+        const btn = document.getElementById('pool-overunder-save-btn');
+        const msg = document.getElementById('pool-overunder-msg');
+        if (input) input.value = ouQ.line || '';
+
+        if (btn && !btn.dataset.wired) {
+            btn.dataset.wired = '1';
+            btn.addEventListener('click', async () => {
+                const newLine = input.value.trim();
+                if (!newLine) { msg.textContent = 'Enter a line.'; msg.style.color = 'red'; return; }
+                // Update the question's line in place
+                const updated = questions.map(q => q.kind === 'overUnder' ? Object.assign({}, q, { line: newLine }) : q);
+                await savePoolConfig({ questions: updated });
+                msg.textContent = `Line set to ${newLine}.`;
+                msg.style.color = 'green';
+            });
+        }
     }
 
     function renderLongshotQualifiers() {
@@ -273,27 +301,49 @@
                 return;
             }
 
-            // Compute fun stats
+            // Compute fun stats — different angles for allocation vs fixed-stake pools
+            const isAlloc = PC.isAllocationMode(config);
             const byPurse = enriched.slice().sort((a, b) => b.max - a.max);
-            const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
             const total = enriched.reduce((s, e) => s + e.max, 0);
             const avg = Math.round(total / enriched.length);
-            const longshot = byProb[byProb.length - 1];
-            const favorite = byProb[0];
             const biggest = byPurse[0];
             const smallest = byPurse[byPurse.length - 1];
-            const parlayCount = enriched.filter(e => e.locks.length >= 2).length;
 
             const lines = [
-                `📊 ${enriched.length} ${enriched.length === 1 ? 'player' : 'players'} in. Combined potential purse: $${total.toLocaleString()}.`,
-                `🏆 Biggest possible payday: ${biggest.name} could win $${biggest.max.toLocaleString()} (odds ${PC.formatOddsAgainst(biggest.prob)} against perfect slip).`,
-                `🎯 Most likely to hit their slip: ${favorite.name} at ${PC.formatOddsAgainst(favorite.prob)} — playing it relatively safe.`,
-                `🎲 Longest shot in the pool: ${longshot.name} needs ${PC.formatOddsAgainst(longshot.prob)} luck. Potential purse: $${longshot.max.toLocaleString()}.`,
+                `📊 ${enriched.length} ${enriched.length === 1 ? 'player' : 'players'} in. Combined max possible: $${total.toLocaleString()}.`,
+                `🏆 Biggest possible payday: ${biggest.name} — $${biggest.max.toLocaleString()}.`,
+                `💰 Average max possible: $${avg.toLocaleString()}.`,
             ];
-            if (parlayCount > 0) {
-                lines.push(`🔒 ${parlayCount} ${parlayCount === 1 ? 'player' : 'players'} locked in a parlay bonus.`);
+
+            if (isAlloc) {
+                // Allocation-specific: who concentrated, who diversified, biggest single bet
+                const questions = config.questions || [];
+                const stakesByPlayer = enriched.map(e => {
+                    const stakes = questions.map(q => PC.getPickStake(e.picks[q.id]) || 0);
+                    const max = Math.max(...stakes);
+                    const min = Math.min(...stakes);
+                    return { name: e.name, stakes, max, min, spread: max - min };
+                });
+                const mostConcentrated = stakesByPlayer.slice().sort((a, b) => b.spread - a.spread)[0];
+                const mostDiversified = stakesByPlayer.slice().sort((a, b) => a.spread - b.spread)[0];
+                const biggestBet = stakesByPlayer.slice().sort((a, b) => b.max - a.max)[0];
+                lines.push(`🎯 Most concentrated slip: ${mostConcentrated.name} — biggest bet $${mostConcentrated.max.toLocaleString()}, smallest $${mostConcentrated.min.toLocaleString()}.`);
+                lines.push(`🌐 Most diversified: ${mostDiversified.name} — spread of $${mostDiversified.spread.toLocaleString()} between biggest and smallest bet.`);
+                if (biggestBet.max !== mostConcentrated.max) {
+                    lines.push(`💵 Single biggest bet of the pool: ${biggestBet.name} at $${biggestBet.max.toLocaleString()}.`);
+                }
+            } else {
+                // Fixed-stake (Derby): probability-based stats
+                const byProb = enriched.slice().sort((a, b) => b.prob - a.prob);
+                const longshot = byProb[byProb.length - 1];
+                const favorite = byProb[0];
+                const parlayCount = enriched.filter(e => e.locks.length >= 2).length;
+                lines.push(`🎯 Most likely to hit their slip: ${favorite.name} at ${PC.formatOddsAgainst(favorite.prob)} — playing it relatively safe.`);
+                lines.push(`🎲 Longest shot in the pool: ${longshot.name} needs ${PC.formatOddsAgainst(longshot.prob)} luck. Potential purse: $${longshot.max.toLocaleString()}.`);
+                if (parlayCount > 0) {
+                    lines.push(`🔒 ${parlayCount} ${parlayCount === 1 ? 'player' : 'players'} locked in a parlay bonus.`);
+                }
             }
-            lines.push(`💰 Average potential purse: $${avg.toLocaleString()}.`);
 
             // "If real money" lines — group + standout individuals
             const totalWagered = enriched.reduce((s, e) => s + e.pnl.wagered, 0);
