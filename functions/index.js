@@ -754,7 +754,10 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
 
                 // 3) Match alert: someone picked the same winner (skip muted phones)
                 let matchesSent = 0;
-                if (winnerPick && (isNewEntry || winnerChanged)) {
+                // Skip "X picked your horse" alerts for allocation pools — they don't have a single
+                // 'win' pick to compare against, and gradient/multi-horse bets don't map to this alert shape.
+                const isAllocPool = event.poolConfig && event.poolConfig.bankrollMode === 'allocate';
+                if (winnerPick && !isAllocPool && (isNewEntry || winnerChanged)) {
                     const config = event.poolConfig || {};
                     const contestants = config.contestants || [];
                     const winContestant = contestants.find(c => Number(c.id) === Number(winnerPick));

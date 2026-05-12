@@ -226,7 +226,10 @@
 
             const rows = ranked.map(({ data, displayName, score, max, slipProb, tieBreak }, i) => {
                 const hasLocks = Array.isArray(data.locks) && data.locks.length >= 2;
-                const oddsStr = (!hasResults && slipProb)
+                // Allocation pools: the slip probability is a rough heuristic for gradient bets,
+                // so hide the "odds N to 1" line on those — the per-bet detail tells a cleaner story.
+                const isAllocMode = window.PoolConfig.isAllocationMode(config);
+                const oddsStr = (!hasResults && slipProb && !isAllocMode)
                     ? `<div class="pool-entry-odds">odds ${window.PoolConfig.formatOddsAgainst(slipProb)}</div>`
                     : '';
                 const amountStr = hasResults
@@ -345,11 +348,45 @@
 
         const winner = tiedAtTop[0];
         const runnerUp = tiedAtTop[1];
+        const isAlloc = window.PoolConfig.isAllocationMode(activeEvent.poolConfig);
+
+        // Allocation pools have their own tiebreaker: winning-stake-total, then alphabetical
+        if (isAlloc) {
+            let resolvedBy = '';
+            let coinFlip = false;
+            if ((winner.winStake || 0) !== (runnerUp.winStake || 0)) {
+                resolvedBy = `more total $ staked on winning bets ($${(winner.winStake || 0).toLocaleString()} vs $${(runnerUp.winStake || 0).toLocaleString()})`;
+            } else {
+                resolvedBy = `winning-stake tied — broken alphabetically by name (${escapeHtml(winner.displayName)} before ${escapeHtml(runnerUp.displayName)})`;
+            }
+            const tiedRows = tiedAtTop.map((r, i) => {
+                const isWinner = i === 0 && !coinFlip;
+                const marker = isWinner ? '🏆' : '·';
+                return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
+                    <span class="pool-tie-rank">${marker}</span>
+                    <span class="pool-tie-name">${escapeHtml(r.displayName)}${isWinner ? '' : ' <span class="pool-tied-badge">tied</span>'}</span>
+                    <span class="pool-tie-score">$${(r.winStake || 0).toLocaleString()} on winning bets</span>
+                </li>`;
+            }).join('');
+            return `
+                <div class="pool-tie-analysis">
+                    <div class="pool-tie-header">⚖️ ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}</div>
+                    <p class="pool-tie-explainer">
+                        Tiebreaker: <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.
+                    </p>
+                    <ul class="pool-tie-table">${tiedRows}</ul>
+                    <p class="pool-tie-fineprint">
+                        Allocation pool cascade: bankroll → total $ staked on winning bets → name alphabetical.
+                    </p>
+                </div>
+            `;
+        }
+
+        // Fixed-mode (Derby) trifecta-closeness cascade — original logic preserved
         const wTie = winner.tieBreak;
         const rTie = runnerUp.tieBreak;
         const useFull = wTie.usedFullFinish;
 
-        // Determine which tier resolved it (and warn on coin-flip)
         let resolvedBy = '';
         let coinFlip = false;
         if (useFull) {
@@ -364,7 +401,6 @@
                 coinFlip = true;
             }
         } else {
-            // Legacy fallback (no fullFinish entered)
             if (wTie.setMatch !== rTie.setMatch) resolvedBy = `more right horses in the trifecta (${wTie.setMatch}/3 vs ${rTie.setMatch}/3)`;
             else if (wTie.exactMatch !== rTie.exactMatch) resolvedBy = `more horses in their correct position (${wTie.exactMatch}/3 vs ${rTie.exactMatch}/3)`;
             else { resolvedBy = `still tied — coin flip required`; coinFlip = true; }
@@ -462,12 +498,61 @@
         const locks = data.locks || [];
         const questions = config.questions || [];
         const hasResults = !!score;
+        const isAlloc = window.PoolConfig.isAllocationMode(config);
 
         const lines = questions.map(q => {
-            const v = picks[q.id];
-            if (v === undefined || v === null || v === '') return '';
+            const rawPick = picks[q.id];
+            const pickValue = window.PoolConfig.getPickValue(rawPick);
+            const stake = window.PoolConfig.getPickStake(rawPick);
+            const hasPick = pickValue !== null && pickValue !== undefined && pickValue !== '' &&
+                (!Array.isArray(pickValue) || pickValue.some(x => x != null && x !== ''));
+            // autoProp shows even with no pick value, as long as a stake was placed
+            const isAutoProp = q.kind === 'autoProp';
+            if (!isAutoProp && !hasPick) return '';
+            if (isAutoProp && (stake === null || stake <= 0) && !isAlloc) return '';
+
             const lock = locks.includes(q.id) ? ' 🔒' : '';
-            const pickStr = formatPickValue(q, v, contestantsById);
+            const pickStr = isAutoProp
+                ? '(auto-prop)'
+                : formatPickValue(q, rawPick, contestantsById);
+
+            // Allocation mode: show stake + potential/actual payoff
+            // Fixed mode: just show pick + payoff (current behavior)
+            if (isAlloc) {
+                const stakeNum = stake || 0;
+                const mult = q.payoffMultiplier;
+                let amountStr = '';
+                if (hasResults) {
+                    const pq = score.perQuestion.find(p => p.questionId === q.id);
+                    if (pq && pq.hit) {
+                        amountStr = `<span class="pool-detail-payoff hit">$${stakeNum.toLocaleString()} → +$${pq.payoff.toLocaleString()}</span>`;
+                    } else {
+                        amountStr = `<span class="pool-detail-payoff miss">$${stakeNum.toLocaleString()} → $0</span>`;
+                    }
+                } else {
+                    // Pre-race: show stake → potential
+                    let potential;
+                    if (q.kind === 'pickInTopN' && q.pickN && q.pickN > 1) {
+                        // Gradient: best-case = all N picks hit
+                        const ids = Array.isArray(pickValue) ? pickValue.filter(v => v != null).map(Number) : [];
+                        const uniq = Array.from(new Set(ids));
+                        const oddsSum = uniq.reduce((s, id) => s + window.PoolConfig.parseOdds((contestantsById[id] || {}).odds).decimal, 0);
+                        potential = stakeNum * (uniq.length + oddsSum) + stakeNum;
+                    } else {
+                        potential = stakeNum * (mult || 1) + stakeNum;
+                    }
+                    amountStr = `<span class="pool-detail-stake">$${stakeNum.toLocaleString()}</span> <span class="pool-detail-potential">→ $${potential.toLocaleString()}</span>`;
+                }
+                return `<li class="pool-detail-alloc">
+                    <div class="pool-detail-alloc-head">
+                        <span class="pool-detail-label">${escapeHtml(q.label)}${lock}</span>
+                        <span class="pool-detail-value">${amountStr}</span>
+                    </div>
+                    ${pickStr ? `<div class="pool-detail-alloc-pick">${escapeHtml(pickStr)}</div>` : ''}
+                </li>`;
+            }
+
+            // Fixed-mode (Derby) format
             let resultStr = '';
             if (hasResults) {
                 const pq = score.perQuestion.find(p => p.questionId === q.id);
@@ -478,7 +563,7 @@
         }).filter(Boolean);
 
         let parlayLine = '';
-        if (locks.length >= 2) {
+        if (locks.length >= 2 && !isAlloc) {
             if (hasResults) {
                 const p = score.parlay;
                 parlayLine = `<li class="pool-detail-parlay"><span class="pool-detail-label">Parlay (${locks.length} legs)</span><span class="pool-detail-value">${p.hit ? `<span class="pool-detail-payoff hit">+$${p.bonus}</span>` : `<span class="pool-detail-payoff miss">missed</span>`}</span></li>`;
@@ -487,7 +572,21 @@
             }
         }
 
-        return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}</ul>`;
+        // Allocation pool footer: total stake + bankroll total
+        let footerLine = '';
+        if (isAlloc) {
+            const totalStake = questions.reduce((s, q) => {
+                const st = window.PoolConfig.getPickStake(picks[q.id]);
+                return s + (st || 0);
+            }, 0);
+            if (hasResults) {
+                footerLine = `<li class="pool-detail-footer"><span class="pool-detail-label">Final bankroll</span><span class="pool-detail-value"><strong>$${score.bankroll.toLocaleString()}</strong></span></li>`;
+            } else {
+                footerLine = `<li class="pool-detail-footer"><span class="pool-detail-label">Total allocated</span><span class="pool-detail-value">$${totalStake.toLocaleString()}</span></li>`;
+            }
+        }
+
+        return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}${footerLine}</ul>`;
     }
 
     function formatPickValue(q, rawV, contestantsById) {

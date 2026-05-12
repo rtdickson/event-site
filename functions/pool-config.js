@@ -653,12 +653,17 @@
         for (const q of questions) {
             // Unwrap allocation-mode { value, stake }
             const v = getPickValue(picks[q.id]);
-            if (v === null || v === undefined || v === '') continue;
-            if (Array.isArray(v) && v.some(x => x == null || x === '')) continue;
+            // autoProp has no pick value — count it as wagered if stake > 0
+            const isAutoProp = q.kind === 'autoProp';
+            if (!isAutoProp) {
+                if (v === null || v === undefined || v === '') continue;
+                if (Array.isArray(v) && v.some(x => x == null || x === '')) continue;
+            }
 
             // Allocation mode uses per-pick stake; legacy uses effectiveStake
             const stakeFromPick = getPickStake(picks[q.id]);
             const stake = (alloc && stakeFromPick !== null) ? stakeFromPick : effectiveStake(q, poolConfig);
+            if (isAutoProp && stake <= 0) continue;
             wagered += stake;
 
             let pHit = 0;
