@@ -35,6 +35,24 @@
             label: 'Yes/No',
             // pick: 'yes' | 'no'
             // result: 'yes' | 'no'
+        },
+        // ----- Added for Preakness 2026 (allocation-style pool) -----
+        pickInTopN: {
+            label: 'Pick a horse to finish in top N',
+            // pick: contestant id (number)
+            // hits if pick is in first N of poolConfig.fullFinish (where N = question.topN)
+        },
+        orderedPair: {
+            label: 'Pick 1-2 in order',
+            // pick: [id, id]
+            // hits if pick === poolConfig.fullFinish.slice(0,2) exactly (or results[qid] if set)
+        },
+        autoProp: {
+            label: 'Auto-resolved prop (no pick)',
+            // pick: null (player just stakes money on the bet)
+            // hits per question.autoComputeFrom:
+            //   'longshotQualifiers' — hits if any horse in poolConfig.longshotQualifiers finishes in top 3
+            // Or explicit results[qid] = 'yes'|'no' if no autoCompute set.
         }
     };
 
@@ -81,6 +99,72 @@
         ];
     }
 
+    // ----- Default Preakness question set -----
+    // Used by allocation-mode pools. Players allocate from a $5,000 bankroll across these 5 bets.
+    // Payoff formula in allocation mode: if hit, payout = (stake * payoffMultiplier) + stake. If miss, payout = 0.
+    function defaultPreaknessQuestions() {
+        return [
+            { id: 'top5',     kind: 'pickInTopN',     label: 'Top 5 Finishers',           topN: 5,      payoffMultiplier: 1.5 },
+            { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
+            { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
+            { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
+            { id: 'longshot', kind: 'autoProp',       label: 'Long Shot Top 3 (15:1+ horse in top 3)', autoComputeFrom: 'longshotQualifiers', payoffMultiplier: 6 }
+        ];
+    }
+
+    // ----- Allocation-mode helpers -----
+    // In allocation mode, each pick is stored as `{ value, stake }` instead of just a raw value.
+    // These helpers handle both shapes so legacy Derby entries still work.
+    function isAllocationMode(poolConfig) {
+        return !!(poolConfig && poolConfig.bankrollMode === 'allocate');
+    }
+
+    function getPickValue(rawPick) {
+        if (rawPick !== null && rawPick !== undefined && typeof rawPick === 'object' && !Array.isArray(rawPick) && 'value' in rawPick) {
+            return rawPick.value;
+        }
+        return rawPick;
+    }
+
+    function getPickStake(rawPick) {
+        if (rawPick !== null && rawPick !== undefined && typeof rawPick === 'object' && !Array.isArray(rawPick) && 'stake' in rawPick) {
+            const n = Number(rawPick.stake);
+            return isFinite(n) ? n : 0;
+        }
+        return null; // signal "use fixed-stake helper instead"
+    }
+
+    // Validates an allocation map against the pool's bankroll constraints.
+    // Returns { ok, allocated, remaining, errors: [string] }
+    function validateAllocation(picks, poolConfig) {
+        const bankroll = (poolConfig && poolConfig.bankrollAmount) || 0;
+        const constraints = (poolConfig && poolConfig.allocationConstraints) || {};
+        const min = constraints.min || 0;
+        const max = constraints.max || bankroll;
+        const increment = constraints.increment || 1;
+        const questions = (poolConfig && poolConfig.questions) || [];
+
+        const errors = [];
+        let allocated = 0;
+        for (const q of questions) {
+            const stake = getPickStake(picks[q.id]);
+            const s = (stake === null) ? 0 : stake;
+            allocated += s;
+            if (s < min) errors.push(`${q.label}: $${s} below the $${min} minimum`);
+            if (s > max) errors.push(`${q.label}: $${s} over the $${max} maximum`);
+            if (s % increment !== 0) errors.push(`${q.label}: $${s} not on $${increment} increment`);
+        }
+        if (allocated !== bankroll) {
+            errors.push(`Total allocated $${allocated}, need exactly $${bankroll}`);
+        }
+        return {
+            ok: errors.length === 0,
+            allocated,
+            remaining: bankroll - allocated,
+            errors
+        };
+    }
+
     // ----- Stake/payoff helpers -----
     function effectiveStake(question, poolConfig) {
         // Per-question custom stake wins; otherwise use pool default.
@@ -114,51 +198,145 @@
     // `pick` is whatever the user submitted; may be undefined (no answer).
     // `results` is the admin-entered results object (keys per question).
     // `contestants` lookup map: { [id]: contestantObject }
-    function scoreQuestion(question, pick, results, contestantsById, poolConfig) {
-        const stake = effectiveStake(question, poolConfig);
+    // Derive the result for a question from the pool config.
+    // In allocation-mode pools, admin enters poolConfig.fullFinish and longshotQualifiers;
+    // most question results are derived from those. Explicit results[qid] always wins.
+    function deriveQuestionResult(question, poolConfig) {
+        const results = (poolConfig && poolConfig.results) || {};
+        const explicit = results[question.id];
+        if (explicit !== undefined && explicit !== null && explicit !== '') return explicit;
+
+        const fullFinish = Array.isArray(poolConfig && poolConfig.fullFinish) ? poolConfig.fullFinish : null;
+        const qualifiers = Array.isArray(poolConfig && poolConfig.longshotQualifiers) ? poolConfig.longshotQualifiers : [];
+
+        switch (question.kind) {
+            case 'pickContestant':
+                if (!fullFinish) return undefined;
+                if (question.resultKey === 'win') return fullFinish[0];
+                if (question.resultKey === 'place') return fullFinish[1];
+                if (question.resultKey === 'show') return fullFinish[2];
+                return undefined;
+            case 'pickInTopN':
+                if (!fullFinish) return undefined;
+                return fullFinish.slice(0, question.topN || 5);
+            case 'orderedTriple':
+                if (!fullFinish) return undefined;
+                return fullFinish.slice(0, 3);
+            case 'unorderedTriple':
+                if (!fullFinish) return undefined;
+                return fullFinish.slice(0, 3);
+            case 'orderedPair':
+                if (!fullFinish) return undefined;
+                return fullFinish.slice(0, 2);
+            case 'pickLongshot':
+                if (!fullFinish) return undefined;
+                return fullFinish.slice(0, 3);
+            case 'autoProp':
+                if (question.autoComputeFrom === 'longshotQualifiers') {
+                    if (!fullFinish || !qualifiers.length) return undefined;
+                    const top3 = fullFinish.slice(0, 3).map(Number);
+                    return qualifiers.some(id => top3.includes(Number(id))) ? 'yes' : 'no';
+                }
+                return undefined;
+            default:
+                return undefined;
+        }
+    }
+
+    // Allocation-mode payoff: (stake * multiplier) + stake (i.e., returns stake plus profit)
+    // Fixed-mode payoff: stake * multiplier (profit only)
+    function payoffForHit(question, stake, oddsDecimal, poolConfig) {
+        const alloc = isAllocationMode(poolConfig);
+        const mult = question.payoffMultiplier;
+        if (alloc) {
+            // Use payoffMultiplier; for pickContestant in allocation mode you'd typically set a multiplier too.
+            // Falls back to oddsDecimal if no multiplier and a pickContestant question.
+            const m = (mult !== undefined && mult !== null) ? mult : (oddsDecimal || 0);
+            return Math.round(stake * m + stake);
+        }
+        // Fixed mode (Derby behavior)
+        return payoffIfHit(question, stake, oddsDecimal);
+    }
+
+    function scoreQuestion(question, rawPick, results, contestantsById, poolConfig) {
+        const alloc = isAllocationMode(poolConfig);
+        const pickValue = getPickValue(rawPick);
+        const allocStake = getPickStake(rawPick);
+        // Stake source: allocation mode uses the per-pick stake; else effectiveStake.
+        const stake = (alloc && allocStake !== null) ? allocStake : effectiveStake(question, poolConfig);
         const miss = { hit: false, payoff: 0 };
 
-        if (pick === undefined || pick === null) return miss;
-        if (!results || results[question.id] === undefined) return miss;
+        if (pickValue === undefined || pickValue === null || pickValue === '') {
+            // autoProp has no pick — needs special handling (still scoreable based on stake alone)
+            if (question.kind !== 'autoProp') return miss;
+        }
 
-        const result = results[question.id];
+        // For autoProp, a player participates if they staked >0 on it; pick value is irrelevant.
+        if (question.kind === 'autoProp') {
+            if (alloc && stake <= 0) return miss;
+            const result = deriveQuestionResult(question, poolConfig);
+            if (result === undefined) return miss;
+            const hit = String(result).toLowerCase() === 'yes' || result === true;
+            if (!hit) return miss;
+            return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
+        }
+
+        const result = deriveQuestionResult(question, poolConfig);
+        if (result === undefined) return miss;
 
         switch (question.kind) {
             case 'pickContestant': {
-                if (Number(pick) !== Number(result)) return miss;
-                const contestant = contestantsById[Number(pick)];
+                if (Number(pickValue) !== Number(result)) return miss;
+                const contestant = contestantsById[Number(pickValue)];
                 const odds = parseOdds(contestant && contestant.odds);
-                return { hit: true, payoff: payoffIfHit(question, stake, odds.decimal) };
+                return { hit: true, payoff: payoffForHit(question, stake, odds.decimal, poolConfig) };
+            }
+
+            case 'pickInTopN': {
+                // result is the top-N array; hit if pick is anywhere in it
+                if (!Array.isArray(result)) return miss;
+                const found = result.some(id => Number(id) === Number(pickValue));
+                if (!found) return miss;
+                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
+            }
+
+            case 'orderedPair': {
+                if (!Array.isArray(pickValue) || pickValue.length !== 2) return miss;
+                if (!Array.isArray(result) || result.length < 2) return miss;
+                if (Number(pickValue[0]) !== Number(result[0])) return miss;
+                if (Number(pickValue[1]) !== Number(result[1])) return miss;
+                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
             }
 
             case 'orderedTriple': {
-                if (!Array.isArray(pick) || pick.length !== 3) return miss;
-                if (!Array.isArray(result) || result.length !== 3) return miss;
-                const allMatch = pick.every((id, i) => Number(id) === Number(result[i]));
+                if (!Array.isArray(pickValue) || pickValue.length !== 3) return miss;
+                if (!Array.isArray(result) || result.length < 3) return miss;
+                const allMatch = pickValue.every((id, i) => Number(id) === Number(result[i]));
                 if (!allMatch) return miss;
-                return { hit: true, payoff: payoffIfHit(question, stake) };
+                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
             }
 
             case 'unorderedTriple': {
-                if (!Array.isArray(pick) || pick.length !== 3) return miss;
-                if (!Array.isArray(result) || result.length !== 3) return miss;
-                const pickSet = new Set(pick.map(Number));
-                const resultSet = new Set(result.map(Number));
+                if (!Array.isArray(pickValue) || pickValue.length !== 3) return miss;
+                if (!Array.isArray(result) || result.length < 3) return miss;
+                const pickSet = new Set(pickValue.map(Number));
+                const resultSet = new Set(result.slice(0, 3).map(Number));
                 if (pickSet.size !== 3 || resultSet.size !== 3) return miss;
                 for (const id of pickSet) if (!resultSet.has(id)) return miss;
-                return { hit: true, payoff: payoffIfHit(question, stake) };
+                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
             }
 
             case 'pickLongshot': {
                 if (!Array.isArray(result)) return miss;
-                const found = result.some(id => Number(id) === Number(pick));
+                const found = result.some(id => Number(id) === Number(pickValue));
                 if (!found) return miss;
-                return { hit: true, payoff: payoffIfHit(question, stake) };
+                return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
             }
 
             case 'overUnder':
             case 'yesNo': {
-                if (String(pick).toLowerCase() !== String(result).toLowerCase()) return miss;
+                if (String(pickValue).toLowerCase() !== String(result).toLowerCase()) return miss;
+                if (alloc) return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
                 return { hit: true, payoff: stake };
             }
 
@@ -309,6 +487,25 @@
             return '1 to ' + (Math.round(1 / o)).toLocaleString();
         }
         return Math.round(o).toLocaleString() + ' to 1';
+    }
+
+    // ----- Tiebreaker for allocation-mode pools -----
+    // Returns the total dollars staked on bets that hit.
+    // Used as the secondary sort key when two players have the same final bankroll.
+    function totalWinningStake(entry, poolConfig, contestants) {
+        if (!entry || !poolConfig) return 0;
+        const contestantsById = {};
+        (contestants || []).forEach(c => { contestantsById[Number(c.id)] = c; });
+        const picks = entry.picks || {};
+        let total = 0;
+        for (const q of (poolConfig.questions || [])) {
+            const sq = scoreQuestion(q, picks[q.id], poolConfig.results || {}, contestantsById, poolConfig);
+            if (sq.hit) {
+                const stake = getPickStake(picks[q.id]);
+                total += (stake === null) ? effectiveStake(q, poolConfig) : stake;
+            }
+        }
+        return total;
     }
 
     // ----- Tiebreaker ladder (when bankrolls tie) -----
@@ -554,8 +751,15 @@
         DEFAULT_PAYOFF_MULTIPLIERS,
         parseOdds,
         defaultDerbyQuestions,
+        defaultPreaknessQuestions,
+        isAllocationMode,
+        getPickValue,
+        getPickStake,
+        validateAllocation,
         effectiveStake,
         payoffIfHit,
+        payoffForHit,
+        deriveQuestionResult,
         scoreQuestion,
         scoreSlip,
         maxPossiblePayoff,
@@ -565,6 +769,7 @@
         formatOddsAgainst,
         computePnL,
         triCloseness,
+        totalWinningStake,
         canLock,
         isPoolOpen
     };
