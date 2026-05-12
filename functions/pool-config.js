@@ -172,9 +172,16 @@
         // Longshot bets
         {
             id: 'longshot_pick', category: 'Longshot',
-            catalogLabel: 'Long Shot — pick one 15:1+ horse',
-            description: 'Pick one horse flagged as longshot (15:1+). Bet hits if it finishes top 3.',
-            modes: ['fixed', 'allocate'],
+            catalogLabel: 'Long Shot — pick 15:1+, payout scales by finish',
+            description: 'Pick one horse flagged as longshot (15:1+). Payout = decimal odds × stake, scaled: full odds if it wins, half if it places 2nd, 1/3 if 3rd, $0 outside top 3.',
+            modes: ['allocate'],
+            template: { id: 'longshot', kind: 'pickLongshot', label: 'Long Shot (15:1+) — position-scaled odds', scoring: 'positionScaledOdds' }
+        },
+        {
+            id: 'longshot_flat', category: 'Longshot',
+            catalogLabel: 'Long Shot — pick 15:1+, flat 6× if top 3 (legacy)',
+            description: 'Derby-style flat-multiplier version: pick one 15:1+ horse; hits flat 6× if it finishes top 3.',
+            modes: ['fixed'],
             template: { id: 'longshot', kind: 'pickLongshot', label: 'Long Shot (15:1+) to finish top 3', payoffMultiplier: 6 }
         },
         {
@@ -227,8 +234,9 @@
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
             { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
-            // Long shot: player picks one 15:1+ horse; hits if it finishes top 3.
-            { id: 'longshot', kind: 'pickLongshot',   label: 'Long Shot (15:1+) to finish top 3', payoffMultiplier: 6 }
+            // Long shot: player picks one 15:1+ horse; payoff = decimal odds scaled by finish position.
+            // 1st = full odds, 2nd = half odds, 3rd = 1/3 odds. Outside top 3 = $0.
+            { id: 'longshot', kind: 'pickLongshot',   label: 'Long Shot (15:1+) — position-scaled odds', scoring: 'positionScaledOdds' }
         ];
     }
 
@@ -480,7 +488,24 @@
 
             case 'pickLongshot': {
                 if (!Array.isArray(result)) return miss;
-                const found = result.some(id => Number(id) === Number(pickValue));
+                const pickedId = Number(pickValue);
+                // Position-scaled odds scoring (Option B):
+                //   1st (index 0) → full decimal odds
+                //   2nd (index 1) → half decimal odds
+                //   3rd (index 2) → 1/3 decimal odds
+                //   outside top 3 → miss
+                // Activated by question.scoring === 'positionScaledOdds'.
+                if (question.scoring === 'positionScaledOdds') {
+                    const pos = result.findIndex(id => Number(id) === pickedId);
+                    if (pos < 0 || pos > 2) return miss;
+                    const contestant = contestantsById[pickedId];
+                    const oddsDecimal = parseOdds(contestant && contestant.odds).decimal;
+                    const scale = pos === 0 ? 1 : pos === 1 ? 0.5 : (1 / 3);
+                    const multiplier = oddsDecimal * scale;
+                    return { hit: true, payoff: Math.round(stake * multiplier + stake) };
+                }
+                // Legacy flat-multiplier scoring (Derby + autoProp longshot)
+                const found = result.some(id => Number(id) === pickedId);
                 if (!found) return miss;
                 return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
             }

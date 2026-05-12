@@ -1037,11 +1037,50 @@
             const stake = (currentEntry.picks[q.id] && currentEntry.picks[q.id].stake) || 0;
             const hasPick = pickHasRequiredValue(q);
 
-            // Potential purse: (stake × multiplier) + stake — what this bet pays if it hits
+            // Potential purse: (stake × multiplier) + stake — what this bet pays if it hits.
+            // Special-case longshot with position-scaled odds: show range based on picked horse's odds.
             if (purse) {
-                const mult = q.payoffMultiplier || 1;
-                const potential = stake * mult + stake;
-                purse.textContent = stake > 0 ? `If this hits: $${potential.toLocaleString()}` : '';
+                if (stake <= 0) {
+                    purse.textContent = '';
+                } else if (q.kind === 'pickLongshot' && q.scoring === 'positionScaledOdds') {
+                    const pickV = window.PoolConfig.getPickValue(currentEntry.picks[q.id]);
+                    if (pickV) {
+                        const contestants = activeEvent.poolConfig.contestants || [];
+                        const c = contestants.find(c => Number(c.id) === Number(pickV));
+                        if (c) {
+                            const oddsDec = window.PoolConfig.parseOdds(c.odds).decimal;
+                            const ifWin = Math.round(stake * oddsDec + stake);
+                            const if2nd = Math.round(stake * (oddsDec / 2) + stake);
+                            const if3rd = Math.round(stake * (oddsDec / 3) + stake);
+                            purse.innerHTML = `If wins: <strong>$${ifWin.toLocaleString()}</strong> · 2nd: $${if2nd.toLocaleString()} · 3rd: $${if3rd.toLocaleString()}`;
+                        } else {
+                            purse.textContent = 'Pick a longshot to see payout';
+                        }
+                    } else {
+                        purse.textContent = 'Pick a longshot to see payout';
+                    }
+                } else if (q.kind === 'pickInTopN' && q.pickN && q.pickN > 1) {
+                    // Gradient — variable on which horses hit; show all-hit max as the headline
+                    const pickV = window.PoolConfig.getPickValue(currentEntry.picks[q.id]);
+                    if (Array.isArray(pickV)) {
+                        const contestants = activeEvent.poolConfig.contestants || [];
+                        const cById = {}; contestants.forEach(c => cById[Number(c.id)] = c);
+                        const oddsSum = pickV.filter(v => v != null).reduce((s, id) => s + window.PoolConfig.parseOdds((cById[Number(id)] || {}).odds).decimal, 0);
+                        const filled = pickV.filter(v => v != null).length;
+                        if (filled > 0) {
+                            const max = Math.round(stake * (filled + oddsSum) + stake);
+                            purse.textContent = `If all picks land: $${max.toLocaleString()}`;
+                        } else {
+                            purse.textContent = '';
+                        }
+                    } else {
+                        purse.textContent = '';
+                    }
+                } else {
+                    const mult = q.payoffMultiplier || 1;
+                    const potential = stake * mult + stake;
+                    purse.textContent = `If this hits: $${potential.toLocaleString()}`;
+                }
             }
 
             card.classList.remove('pool-alloc-card-under', 'pool-alloc-card-ok', 'pool-alloc-card-max', 'pool-alloc-card-needpick');

@@ -104,7 +104,16 @@
                 next.kind = 'pickLongshot';
                 delete next.autoComputeFrom;
                 if (!next.label || /long\s*shot.*top\s*3/i.test(next.label)) {
-                    next.label = 'Long Shot (15:1+) to finish top 3';
+                    next.label = 'Long Shot (15:1+) — position-scaled odds';
+                }
+                dirty = true;
+            }
+            // Longshot in allocation pools: convert flat-multiplier longshot to position-scaled odds.
+            if (isAlloc && next.kind === 'pickLongshot' && next.scoring !== 'positionScaledOdds') {
+                next.scoring = 'positionScaledOdds';
+                if (next.payoffMultiplier !== undefined) delete next.payoffMultiplier;
+                if (next.label && /to finish top 3/i.test(next.label)) {
+                    next.label = 'Long Shot (15:1+) — position-scaled odds';
                 }
                 dirty = true;
             }
