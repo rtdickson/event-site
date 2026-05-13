@@ -1445,12 +1445,31 @@
                 return { rows, errors, skipped, mode: 'full' };
             }
         } else {
-            // No header — guess by column count: 2 cells = odds-only, 3+ = full
+            // No header — try to auto-detect the odds column by scanning for X/Y patterns.
+            // Handles cases like "Post,Horse,Jockey,Trainer,Odds" data where the user pasted
+            // without the header line: column 4 contains odds, not column 2 (the jockey).
             const firstRowCells = splitRow(lines[0]);
+            const oddsRe = /^\s*\d+\s*[\/\-]\s*\d+\s*$/;
             if (firstRowCells.length === 2) {
                 cols = { id: 0, odds: 1 };
             } else {
-                cols = { id: 0, name: 1, odds: 2, longshot: 3 };
+                // Scan from the rightmost column leftward; first column where the first 3 data
+                // rows all match the X/Y odds pattern wins. (Names/jockeys never look like odds.)
+                let oddsCol = -1;
+                const sample = lines.slice(0, Math.min(3, lines.length));
+                for (let c = firstRowCells.length - 1; c >= 1; c--) {
+                    if (sample.every(line => oddsRe.test(splitRow(line)[c] || ''))) {
+                        oddsCol = c;
+                        break;
+                    }
+                }
+                if (oddsCol >= 2) {
+                    // 5-col format with odds at the end (Post, Horse, Jockey, Trainer, Odds)
+                    cols = { id: 0, name: 1, odds: oddsCol };
+                } else {
+                    // Default 3-col layout (Post, Horse, Odds[, Longshot])
+                    cols = { id: 0, name: 1, odds: 2, longshot: 3 };
+                }
             }
         }
 
