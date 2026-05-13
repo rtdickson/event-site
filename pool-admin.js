@@ -1311,7 +1311,7 @@
 
             let tieHelp, tieHeader, tieCell;
             if (isAlloc) {
-                tieHelp = 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → alphabetical.';
+                tieHelp = 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → split pot / coin flip.';
                 tieHeader = '<th>Winning stake</th><th>Tri err</th>';
                 tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td><td>${(r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : '—'}</td>`;
             } else {

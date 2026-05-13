@@ -352,7 +352,7 @@
         const runnerUp = tiedAtTop[1];
         const isAlloc = window.PoolConfig.isAllocationMode(activeEvent.poolConfig);
 
-        // Allocation pools: winning-stake → trifecta position error → alphabetical
+        // Allocation pools: winning-stake → trifecta position error → coin flip / split pot
         if (isAlloc) {
             let resolvedBy = '';
             let coinFlip = false;
@@ -363,11 +363,11 @@
             } else if (wTri !== null && rTri !== null && wTri !== rTri) {
                 resolvedBy = `lower trifecta position-error (${wTri} vs ${rTri})`;
             } else {
-                resolvedBy = `every tiebreaker tied — broken alphabetically by name (${escapeHtml(winner.displayName)} before ${escapeHtml(runnerUp.displayName)})`;
+                coinFlip = true;
             }
             const tiedRows = tiedAtTop.map((r, i) => {
                 const isWinner = i === 0 && !coinFlip;
-                const marker = isWinner ? '🏆' : '·';
+                const marker = coinFlip ? '🪙' : (isWinner ? '🏆' : '·');
                 const tri = (r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : null;
                 const triStr = tri !== null ? ` · tri err ${tri}` : '';
                 return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
@@ -376,15 +376,19 @@
                     <span class="pool-tie-score">$${(r.winStake || 0).toLocaleString()} winning${triStr}</span>
                 </li>`;
             }).join('');
+            const headerText = coinFlip
+                ? `🪙 ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()} — coin flip / split pot`
+                : `⚖️ ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}`;
+            const explainerText = coinFlip
+                ? `<strong>Split the pot or coin flip.</strong> All three tiebreakers (bankroll, winning stake, trifecta error) tied between ${escapeHtml(tiedAtTop.map(r => r.displayName).join(', '))}. Admin makes the call.`
+                : `Tiebreaker: <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.`;
             return `
-                <div class="pool-tie-analysis">
-                    <div class="pool-tie-header">⚖️ ${tiedAtTop.length}-way tie at $${winnerBankroll.toLocaleString()}</div>
-                    <p class="pool-tie-explainer">
-                        Tiebreaker: <strong>${escapeHtml(winner.displayName)} wins</strong> with ${resolvedBy}.
-                    </p>
+                <div class="pool-tie-analysis ${coinFlip ? 'pool-tie-coinflip' : ''}">
+                    <div class="pool-tie-header">${headerText}</div>
+                    <p class="pool-tie-explainer">${explainerText}</p>
                     <ul class="pool-tie-table">${tiedRows}</ul>
                     <p class="pool-tie-fineprint">
-                        Allocation pool cascade: bankroll → total $ staked on winning bets → trifecta position error → name alphabetical.
+                        Allocation cascade: bankroll → total $ on winning bets → trifecta position error → split pot / coin flip.
                     </p>
                 </div>
             `;
