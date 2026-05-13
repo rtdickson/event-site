@@ -310,8 +310,28 @@
                 }
                 dirty = true;
             }
+            // Box-3 in allocation pools: ensure new multiplier (7×). Old admin-created or legacy
+            // events may have 10×; bring them in line.
+            if (isAlloc && next.kind === 'unorderedTriple' && next.payoffMultiplier === 10) {
+                next.payoffMultiplier = 7;
+                dirty = true;
+            }
             return next;
         });
+
+        // Add Top-3 Box to allocation pools that don't have one yet (so existing Preakness
+        // events pick it up automatically without admin needing to use the Add Bet picker).
+        if (isAlloc && !migrated.some(q => q.kind === 'unorderedTriple')) {
+            // Insert after exacta if present, else at end
+            const exactaIdx = migrated.findIndex(q => q.id === 'exacta');
+            const box3 = { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', payoffMultiplier: 7 };
+            if (exactaIdx >= 0) {
+                migrated.splice(exactaIdx + 1, 0, box3);
+            } else {
+                migrated.push(box3);
+            }
+            dirty = true;
+        }
         if (dirty) {
             currentPoolEvent.poolConfig.questions = migrated;
             try {

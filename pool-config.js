@@ -165,9 +165,9 @@
         {
             id: 'box3', category: 'Multi-horse',
             catalogLabel: 'Top-3 Box — pick 3 in any order',
-            description: 'Pick 3 horses. Bet hits if all 3 finish in the top 3, any order.',
+            description: 'Pick 3 horses. Bet hits if all 3 finish in the top 3, any order. Sits above Exacta (pays more — harder bet) and above Trifecta (no order requirement, but you still need all 3 right horses).',
             modes: ['fixed', 'allocate'],
-            template: { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', payoffMultiplier: 10 }
+            template: { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', payoffMultiplier: 7 }
         },
         // Longshot bets
         {
@@ -234,6 +234,7 @@
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
             { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
+            { id: 'box3',     kind: 'unorderedTriple',label: 'Top-3 Box (any order)',     payoffMultiplier: 7 },
             // Long shot: player picks one 15:1+ horse; payoff = decimal odds scaled by finish position.
             // 1st = full odds, 2nd = half odds, 3rd = 1/3 odds. Outside top 3 = $0.
             { id: 'longshot', kind: 'pickLongshot',   label: 'Long Shot (15:1+) — position-scaled odds', scoring: 'positionScaledOdds' }
