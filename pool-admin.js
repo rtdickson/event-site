@@ -8,6 +8,199 @@
     let currentPoolEvent = null;
     const NOTIFY_URL = 'https://us-central1-piveevents.cloudfunctions.net/sendNotification';
 
+    // ----- Auto-notify players when their picks scratch or drop out of longshot -----
+    // Called after a successful CSV import. Diffs old vs new contestants, finds affected
+    // entries, and fires a batched per-player SMS via the cloud function. Tracks what's
+    // already been notified on poolConfig.lastNotifiedField so re-importing the same CSV
+    // doesn't double-spam.
+    async function notifyOddsChanges(oldContestantsSnapshot) {
+        if (!currentPoolEvent || !currentPoolEventId) return '';
+        const newContestants = currentPoolEvent.poolConfig.contestants || [];
+        const oldById = new Map(oldContestantsSnapshot.map(c => [Number(c.id), c]));
+        const newById = new Map(newContestants.map(c => [Number(c.id), c]));
+
+        // Detect: scratched (in old, not in new) + longshot lost (was longshot, no longer)
+        const scratchedNow = [];
+        const longshotLostNow = [];
+        oldContestantsSnapshot.forEach(oldC => {
+            const id = Number(oldC.id);
+            const newC = newById.get(id);
+            if (!newC) {
+                scratchedNow.push({ id, name: oldC.name });
+            } else if (oldC.isLongshot && !newC.isLongshot) {
+                longshotLostNow.push({ id, name: oldC.name, oldOdds: oldC.odds, newOdds: newC.odds });
+            }
+        });
+
+        // De-dupe vs what was already notified before
+        const lastNotified = (currentPoolEvent.poolConfig.lastNotifiedField) || { scratched: [], longshotLost: [] };
+        const prevScratched = new Set((lastNotified.scratched || []).map(Number));
+        const prevLongshotLost = new Set((lastNotified.longshotLost || []).map(Number));
+        const newScratched = scratchedNow.filter(s => !prevScratched.has(s.id));
+        const newLongshotLost = longshotLostNow.filter(s => !prevLongshotLost.has(s.id));
+
+        if (newScratched.length === 0 && newLongshotLost.length === 0) {
+            return '';
+        }
+
+        // Find affected entries
+        const entriesSnap = await db.collection(currentPoolEvent.collectionName).get();
+        const config = currentPoolEvent.poolConfig;
+        const closeStr = config.closesAt && config.closesAt.toDate
+            ? config.closesAt.toDate().toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
+            : 'close time';
+
+        // Build per-phone notification batch
+        const byPhone = new Map(); // phone → { name, scratched: [], longshotLost: [] }
+        entriesSnap.forEach(doc => {
+            const data = doc.data();
+            const phone = data.phone;
+            if (!phone) return;
+            const affectedScratched = [];
+            const affectedLongshot = [];
+
+            newScratched.forEach(s => {
+                const bets = affectedBetsForHorse(data, s.id, config);
+                if (bets.length > 0) affectedScratched.push({ ...s, bets });
+            });
+            newLongshotLost.forEach(s => {
+                // Longshot drop only affects the Long Shot bet pick
+                if (affectedOnLongshotBet(data, s.id, config)) {
+                    affectedLongshot.push(s);
+                }
+            });
+
+            if (affectedScratched.length > 0 || affectedLongshot.length > 0) {
+                byPhone.set(phone, { name: data.name || 'there', scratched: affectedScratched, longshotLost: affectedLongshot });
+            }
+        });
+
+        if (byPhone.size === 0) {
+            // No one was affected — still update the snapshot so we don't re-detect next time
+            await savePoolConfig({
+                lastNotifiedField: {
+                    scratched: scratchedNow.map(s => s.id),
+                    longshotLost: longshotLostNow.map(s => s.id)
+                }
+            });
+            return `(${newScratched.length} scratched, ${newLongshotLost.length} longshot drops — no entries affected.)`;
+        }
+
+        // Cap at 30 SMS to prevent runaway
+        const MAX_NOTIFICATIONS = 30;
+        const notifications = [];
+        let i = 0;
+        for (const [phone, info] of byPhone) {
+            if (i >= MAX_NOTIFICATIONS) break;
+            notifications.push({
+                phone,
+                body: composeChangeMessage(currentPoolEvent.name, closeStr, info)
+            });
+            i++;
+        }
+
+        // Send via cloud function
+        let sentSummary = '';
+        try {
+            const res = await fetch(NOTIFY_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'oddsChangeBatch',
+                    eventId: currentPoolEventId,
+                    notifications
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                sentSummary = `Notified ${data.sent} player${data.sent === 1 ? '' : 's'}`;
+                if (data.muted) sentSummary += ` (${data.muted} muted skipped)`;
+                if (data.failed) sentSummary += ` — ${data.failed} failed`;
+                sentSummary += '.';
+            } else {
+                sentSummary = `Notify call failed: ${data.error || 'unknown'}.`;
+            }
+        } catch (err) {
+            console.error('oddsChangeBatch fetch failed:', err);
+            sentSummary = `Notify call errored: ${err.message}.`;
+        }
+
+        // Update snapshot regardless (so we don't retry forever on a failure that succeeded server-side)
+        await savePoolConfig({
+            lastNotifiedField: {
+                scratched: scratchedNow.map(s => s.id),
+                longshotLost: longshotLostNow.map(s => s.id)
+            }
+        });
+
+        return sentSummary;
+    }
+
+    // For a given entry, find which bet labels the affected horse appears on
+    function affectedBetsForHorse(entry, horseId, config) {
+        const bets = [];
+        const picks = entry.picks || {};
+        const PC = window.PoolConfig;
+        const questions = config.questions || [];
+        questions.forEach(q => {
+            const rawPick = picks[q.id];
+            const v = PC.getPickValue(rawPick);
+            if (v === null || v === undefined || v === '') return;
+            const matchesSingle = !Array.isArray(v) && Number(v) === Number(horseId);
+            const matchesArray = Array.isArray(v) && v.some(x => Number(x) === Number(horseId));
+            if (matchesSingle || matchesArray) {
+                bets.push(humanBetLabel(q));
+            }
+        });
+        return bets;
+    }
+
+    function affectedOnLongshotBet(entry, horseId, config) {
+        const picks = entry.picks || {};
+        const PC = window.PoolConfig;
+        const longshotQ = (config.questions || []).find(q => q.kind === 'pickLongshot');
+        if (!longshotQ) return false;
+        const v = PC.getPickValue(picks[longshotQ.id]);
+        return Number(v) === Number(horseId);
+    }
+
+    function humanBetLabel(q) {
+        if (q.id === 'win') return 'Win';
+        if (q.id === 'place') return 'Place';
+        if (q.id === 'show') return 'Show';
+        if (q.id === 'tri') return 'Trifecta';
+        if (q.id === 'box3') return 'Top-3 Box';
+        if (q.id === 'top5') return 'Top 5';
+        if (q.id === 'exacta') return 'Exacta';
+        if (q.id === 'longshot') return 'Long Shot';
+        return q.label || q.id;
+    }
+
+    function composeChangeMessage(eventName, closeStr, info) {
+        const lines = [];
+        if (info.scratched.length === 1) {
+            const s = info.scratched[0];
+            lines.push(`#${s.id} ${s.name} SCRATCHED. You picked them for: ${s.bets.join(', ')}.`);
+        } else if (info.scratched.length > 1) {
+            lines.push('Scratched:');
+            info.scratched.forEach(s => {
+                lines.push(`• #${s.id} ${s.name} (you picked: ${s.bets.join(', ')})`);
+            });
+        }
+        if (info.longshotLost.length === 1) {
+            const s = info.longshotLost[0];
+            lines.push(`#${s.id} ${s.name} dropped to ${s.newOdds} — no longer a longshot. Your Long Shot pick won't qualify.`);
+        } else if (info.longshotLost.length > 1) {
+            lines.push('No longer longshots:');
+            info.longshotLost.forEach(s => {
+                lines.push(`• #${s.id} ${s.name} (now ${s.newOdds})`);
+            });
+        }
+        const intro = `[${eventName}] Heads up — your slip is affected:`;
+        const outro = `Update at https://75pinegrove.com before picks lock ${closeStr}.`;
+        return [intro, ...lines, outro].join('\n');
+    }
+
     // ----- Entry point -----
     async function initializePoolAdmin() {
         const sidebarLink = document.querySelector('.sidebar-link[data-panel="pool"]');
@@ -583,6 +776,9 @@
                     return;
                 }
 
+                // Capture old contestants for change-detection (scratches, longshot drops)
+                const oldContestantsSnapshot = (currentPoolEvent.poolConfig.contestants || []).map(c => Object.assign({}, c));
+
                 let summary;
                 if (parsed.mode === 'odds-only') {
                     // Merge: update odds (and recomputed longshot) on existing horses; report unmatched ids.
@@ -625,6 +821,15 @@
                     if (skipped.length) summary += ` Skipped duplicate IDs: ${skipped.join(', ')}.`;
                 }
                 if (parsed.skipped && parsed.skipped.length) summary += ` Skipped from CSV: ${parsed.skipped.join(', ')}.`;
+
+                // Detect changes vs the snapshot we took before save, and auto-notify affected players
+                try {
+                    const notifyLine = await notifyOddsChanges(oldContestantsSnapshot);
+                    if (notifyLine) summary += ' ' + notifyLine;
+                } catch (notifyErr) {
+                    console.warn('Odds-change notify failed (non-fatal):', notifyErr);
+                }
+
                 msg.textContent = summary;
                 msg.style.color = 'green';
                 textarea.value = '';

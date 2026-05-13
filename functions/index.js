@@ -871,6 +871,40 @@ exports.sendNotification = onRequest({ invoker: 'public' }, async (req, res) => 
                 return res.status(200).json({ success: true, sent, failed, muted, total: phones.size });
             }
 
+            // oddsChangeBatch: fire SMS to a list of players whose picks were affected by
+            // scratches or longshot drops after an odds import. Body shape:
+            //   { eventId, notifications: [{ phone, body }] }
+            // Skips muted phones, normalizes to E.164, returns summary.
+            if (action === 'oddsChangeBatch') {
+                const { notifications } = req.body || {};
+                if (!Array.isArray(notifications) || notifications.length === 0) {
+                    return res.status(400).json({ success: false, error: 'notifications array required' });
+                }
+                const MAX = 30;
+                if (notifications.length > MAX) {
+                    return res.status(400).json({ success: false, error: `too many notifications (max ${MAX})` });
+                }
+                let sent = 0, failed = 0, muted = 0;
+                for (const n of notifications) {
+                    if (!n || !n.phone || !n.body) { failed++; continue; }
+                    if (isMuted(event, n.phone)) { muted++; continue; }
+                    const to = toE164(n.phone);
+                    if (!to) { failed++; console.warn('Bad phone for oddsChange:', n.phone); continue; }
+                    try {
+                        await twilioClient.messages.create({
+                            body: n.body,
+                            from: process.env.TWILIO_PHONE_NUMBER,
+                            to
+                        });
+                        sent++;
+                    } catch (e) {
+                        console.error('oddsChange SMS failed for', n.phone, '→', to, e.message);
+                        failed++;
+                    }
+                }
+                return res.status(200).json({ success: true, sent, failed, muted, total: notifications.length });
+            }
+
             return res.status(400).json({ success: false, error: 'Unknown action' });
         } catch (err) {
             console.error('sendNotification error:', err);
