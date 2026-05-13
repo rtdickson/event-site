@@ -498,6 +498,8 @@ async function loadEventOptions() {
             option.value = `rsvp-only-${activeData.collectionName}`;
             option.textContent = `${activeData.name} - RSVP'd Only (Yes/Maybe)`;
             option.setAttribute('data-event-name', activeData.name);
+            option.setAttribute('data-event-id', activeEvent.id);
+            option.setAttribute('data-event-type', activeData.type || 'gathering');
             option.setAttribute('data-is-rsvp-only', 'true');
             eventSelect.appendChild(option);
             console.log('Added RSVP-only option:', option.textContent);
@@ -516,6 +518,8 @@ async function loadEventOptions() {
             option.value = data.collectionName.replace('rsvps-', '');
             option.textContent = data.name;
             option.setAttribute('data-event-name', data.name);
+            option.setAttribute('data-event-id', doc.id);
+            option.setAttribute('data-event-type', data.type || 'gathering');
             option.setAttribute('data-is-rsvp-only', 'false');
             if (data.isActive) {
                 option.textContent += ' (ACTIVE)';
@@ -696,34 +700,57 @@ function setupEventChangeListener() {
 function updateDefaultMessage() {
     const eventSelect = document.getElementById('event-select');
     const messageTextarea = document.getElementById('invite-message');
-    
+
     if (!eventSelect || !messageTextarea) return;
-    
+
     const selectedOption = eventSelect.options[eventSelect.selectedIndex];
     const eventName = selectedOption ? selectedOption.getAttribute('data-event-name') : null;
+    const eventId = selectedOption ? selectedOption.getAttribute('data-event-id') : '';
+    const eventType = selectedOption ? selectedOption.getAttribute('data-event-type') : 'gathering';
     const isRSVPOnly = selectedOption && selectedOption.getAttribute('data-is-rsvp-only') === 'true';
-    
-    if (eventName && eventName !== 'No events created yet') {
-        let defaultMessage;
-        
-        if (isRSVPOnly) {
-            // Special message for RSVP'd attendees
-            defaultMessage = `Hi! Quick update about ${eventName}:
 
-[Your update message here - maybe last minute details, timing changes, what to bring, etc.]
+    if (!eventName || eventName === 'No events created yet') return;
 
-Thanks for confirming your attendance! See you there!`;
-        } else {
-            // Regular invitation message
-            defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
+    let defaultMessage;
+
+    if (isRSVPOnly) {
+        // Update-style message for people who already RSVP'd / entered
+        defaultMessage = `Hi! Quick update about ${eventName}:
+
+[Your update message here — maybe last minute details, timing changes, etc.]
+
+Thanks for being in!`;
+    } else if (eventType === 'pool') {
+        // Pool invite — link to event page, math page, key SMS commands
+        const eventLink = eventId
+            ? `https://75pinegrove.com/event.html?id=${eventId}`
+            : 'https://75pinegrove.com';
+        const mathLink = eventId
+            ? `https://75pinegrove.com/how-the-math-works.html?event=${eventId}`
+            : 'https://75pinegrove.com/how-the-math-works.html';
+        defaultMessage = `You're in for ${eventName} — friends-only pool at Pine Grove Gatherings!
+
+Allocate your bankroll across 5 bets (Top 5, Time O/U, Trifecta, Exacta, Long Shot). Make your picks before lock:
+${eventLink}
+
+How it works: ${mathLink}
+Password: FriendsOnly2025
+
+Text commands to this number anytime:
+• PICKS — see your slip
+• STATS — leaderboard & odds
+• SAY <msg> — trash talk to all entrants
+• MUTE / UNMUTE — silence this event`;
+    } else {
+        // Default: gathering RSVP invite
+        defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
 
 RSVP options:
-• Reply to this text: YES [# of guests], MAYBE [# of guests], or NO  
+• Reply to this text: YES [# of guests], MAYBE [# of guests], or NO
 • Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
-        }
-        
-        messageTextarea.value = defaultMessage;
     }
+
+    messageTextarea.value = defaultMessage;
 }
 
 // Get invite status for a contact
