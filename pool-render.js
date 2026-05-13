@@ -197,7 +197,9 @@
                 if (hasResults) {
                     if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
                     if (isAlloc) {
+                        // Allocation cascade: winning stake → trifecta position error → alphabetical
                         if ((b.winStake || 0) !== (a.winStake || 0)) return (b.winStake || 0) - (a.winStake || 0);
+                        if (a.tieBreak && b.tieBreak && a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
                         return a.displayName.localeCompare(b.displayName);
                     }
                     if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
@@ -350,22 +352,28 @@
         const runnerUp = tiedAtTop[1];
         const isAlloc = window.PoolConfig.isAllocationMode(activeEvent.poolConfig);
 
-        // Allocation pools have their own tiebreaker: winning-stake-total, then alphabetical
+        // Allocation pools: winning-stake → trifecta position error → alphabetical
         if (isAlloc) {
             let resolvedBy = '';
             let coinFlip = false;
+            const wTri = winner.tieBreak ? winner.tieBreak.tier1 : null;
+            const rTri = runnerUp.tieBreak ? runnerUp.tieBreak.tier1 : null;
             if ((winner.winStake || 0) !== (runnerUp.winStake || 0)) {
                 resolvedBy = `more total $ staked on winning bets ($${(winner.winStake || 0).toLocaleString()} vs $${(runnerUp.winStake || 0).toLocaleString()})`;
+            } else if (wTri !== null && rTri !== null && wTri !== rTri) {
+                resolvedBy = `lower trifecta position-error (${wTri} vs ${rTri})`;
             } else {
-                resolvedBy = `winning-stake tied — broken alphabetically by name (${escapeHtml(winner.displayName)} before ${escapeHtml(runnerUp.displayName)})`;
+                resolvedBy = `every tiebreaker tied — broken alphabetically by name (${escapeHtml(winner.displayName)} before ${escapeHtml(runnerUp.displayName)})`;
             }
             const tiedRows = tiedAtTop.map((r, i) => {
                 const isWinner = i === 0 && !coinFlip;
                 const marker = isWinner ? '🏆' : '·';
+                const tri = (r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : null;
+                const triStr = tri !== null ? ` · tri err ${tri}` : '';
                 return `<li class="${isWinner ? 'pool-tie-winner-row' : ''}">
                     <span class="pool-tie-rank">${marker}</span>
                     <span class="pool-tie-name">${escapeHtml(r.displayName)}${isWinner ? '' : ' <span class="pool-tied-badge">tied</span>'}</span>
-                    <span class="pool-tie-score">$${(r.winStake || 0).toLocaleString()} on winning bets</span>
+                    <span class="pool-tie-score">$${(r.winStake || 0).toLocaleString()} winning${triStr}</span>
                 </li>`;
             }).join('');
             return `
@@ -376,7 +384,7 @@
                     </p>
                     <ul class="pool-tie-table">${tiedRows}</ul>
                     <p class="pool-tie-fineprint">
-                        Allocation pool cascade: bankroll → total $ staked on winning bets → name alphabetical.
+                        Allocation pool cascade: bankroll → total $ staked on winning bets → trifecta position error → name alphabetical.
                     </p>
                 </div>
             `;

@@ -1292,8 +1292,9 @@
             }).sort((a, b) => {
                 if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
                 if (isAlloc) {
-                    // Allocation tiebreaker: most $ staked on winning bets, then alphabetical
+                    // Allocation cascade: winning stake → trifecta position error → alphabetical
                     if (b.winStake !== a.winStake) return b.winStake - a.winStake;
+                    if (a.tieBreak && b.tieBreak && a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
                     return a.name.localeCompare(b.name);
                 }
                 // Fixed-stake tiebreaker: trifecta-closeness ladder
@@ -1310,9 +1311,9 @@
 
             let tieHelp, tieHeader, tieCell;
             if (isAlloc) {
-                tieHelp = 'Allocation pool — tiebreaker: total $ staked on winning bets, then alphabetical.';
-                tieHeader = '<th>Winning stake</th>';
-                tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td>`;
+                tieHelp = 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → alphabetical.';
+                tieHeader = '<th>Winning stake</th><th>Tri err</th>';
+                tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td><td>${(r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : '—'}</td>`;
             } else {
                 const useFull = ranked.length > 0 && ranked[0].tieBreak.usedFullFinish;
                 tieHelp = useFull

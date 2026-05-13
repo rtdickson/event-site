@@ -73,10 +73,11 @@
                 </section>
 
                 <section class="math-section">
-                    <h3>3. Allocation pool — tiebreaker</h3>
-                    <p>If two or more players tie on final bankroll:</p>
+                    <h3>3. Allocation pool — tiebreaker cascade</h3>
+                    <p>If two or more players tie on final bankroll, the system runs through these in order until one wins:</p>
                     <ol>
-                        <li><strong>Total $ staked on winning bets</strong> — whoever put more money on the bets that hit wins. Rewards conviction.</li>
+                        <li><strong>Total $ staked on winning bets</strong> — whoever put more money on the bets that hit wins. Rewards conviction sizing.</li>
+                        <li><strong>Trifecta position error (lowest)</strong> — sum of <code>|slot − actual_finish_position|</code> across your 3 trifecta picks. Lower error = closer to the actual finish = wins. Same metric we use as the primary tiebreaker on Derby-style pools.</li>
                         <li><strong>Name alphabetical</strong> — final fallback, so the system is always deterministic.</li>
                     </ol>
                 </section>
