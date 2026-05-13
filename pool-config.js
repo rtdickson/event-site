@@ -151,9 +151,9 @@
         {
             id: 'tri', category: 'Multi-horse',
             catalogLabel: 'Trifecta — pick 1-2-3 in exact order',
-            description: 'Pick 3 horses in the exact finish order. Highest-payoff hard bet.',
+            description: 'Pick 3 horses in the exact finish order. Hardest bet on the slip; pays accordingly. Sits above Top-3 Box (which has no order requirement).',
             modes: ['fixed', 'allocate'],
-            template: { id: 'tri', kind: 'orderedTriple', label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 }
+            template: { id: 'tri', kind: 'orderedTriple', label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 12 }
         },
         {
             id: 'exacta', category: 'Multi-horse',
@@ -232,7 +232,7 @@
             // Top 5: gradient scoring — pick 5 horses; multiplier = (# in actual top 5) + (sum of their odds)
             { id: 'top5',     kind: 'pickInTopN',     label: 'Top 5 Finishers (pick 5)',  topN: 5, pickN: 5, scoring: 'gradientOdds' },
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
-            { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 4 },
+            { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 12 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
             { id: 'box3',     kind: 'unorderedTriple',label: 'Top-3 Box (any order)',     payoffMultiplier: 7 },
             // Long shot: player picks one 15:1+ horse; payoff = decimal odds scaled by finish position.

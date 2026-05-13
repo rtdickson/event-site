@@ -316,6 +316,12 @@
                 next.payoffMultiplier = 7;
                 dirty = true;
             }
+            // Trifecta in allocation pools: bump from old 4× to new 12× to align with difficulty
+            // (hardest bet; should be the top reward).
+            if (isAlloc && next.kind === 'orderedTriple' && next.payoffMultiplier === 4) {
+                next.payoffMultiplier = 12;
+                dirty = true;
+            }
             return next;
         });
 
