@@ -489,17 +489,24 @@
             case 'pickLongshot': {
                 if (!Array.isArray(result)) return miss;
                 const pickedId = Number(pickValue);
+                const contestant = contestantsById[pickedId];
+
+                // Qualification guard: bet only pays if the picked horse is still flagged as
+                // a longshot at scoring time (15:1+). If odds tightened and the horse no longer
+                // qualifies — or was removed from the field — the bet voids and pays $0. Players
+                // are notified via SMS when their picked longshot drops; if they don't update
+                // their pick, they lose this bet.
+                if (!contestant || !contestant.isLongshot) return miss;
+
                 // Position-scaled odds scoring (Option B):
                 //   1st (index 0) → full decimal odds
                 //   2nd (index 1) → half decimal odds
                 //   3rd (index 2) → 1/3 decimal odds
                 //   outside top 3 → miss
-                // Activated by question.scoring === 'positionScaledOdds'.
                 if (question.scoring === 'positionScaledOdds') {
                     const pos = result.findIndex(id => Number(id) === pickedId);
                     if (pos < 0 || pos > 2) return miss;
-                    const contestant = contestantsById[pickedId];
-                    const oddsDecimal = parseOdds(contestant && contestant.odds).decimal;
+                    const oddsDecimal = parseOdds(contestant.odds).decimal;
                     const scale = pos === 0 ? 1 : pos === 1 ? 0.5 : (1 / 3);
                     const multiplier = oddsDecimal * scale;
                     return { hit: true, payoff: Math.round(stake * multiplier + stake) };
