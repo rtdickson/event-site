@@ -828,11 +828,12 @@
 
     function getInitialPickValue(q) {
         switch (q.kind) {
-            case 'orderedTriple': return [null, null, null];
-            case 'orderedPair':   return [null, null];
-            case 'autoProp':      return null;
-            case 'pickInTopN':    return (q.pickN && q.pickN > 1) ? Array(q.pickN).fill(null) : null;
-            default:              return null;
+            case 'orderedTriple':
+            case 'unorderedTriple': return [null, null, null];
+            case 'orderedPair':     return [null, null];
+            case 'autoProp':        return null;
+            case 'pickInTopN':      return (q.pickN && q.pickN > 1) ? Array(q.pickN).fill(null) : null;
+            default:                return null;
         }
     }
 
@@ -894,6 +895,32 @@
                         </select>`).join('')}
                     </div>`;
                 break;
+            case 'unorderedTriple': {
+                // Pick 3 horses in any order — same UI as orderedTriple but labeled differently
+                const labelText = q.id === 'box3' ? 'Pick 3 horses for top 3 (any order)' : 'Pick 3 (any order)';
+                pickUI = `<label class="pool-alloc-pick-label">${labelText}</label>
+                    <div class="pool-alloc-triple">
+                        ${[0,1,2].map(i => `<select data-pick-key="${q.id}" data-pick-index="${i}">
+                            <option value="">Pick ${i + 1}</option>
+                            ${contestants.map(c => optionFor(c, Array.isArray(v) ? v[i] : null)).join('')}
+                        </select>`).join('')}
+                    </div>`;
+                break;
+            }
+            case 'pickContestant': {
+                // Single horse pick (Win / Place / Show in fixed-mode; can also appear in allocation
+                // pools if admin added Win/Place/Show from the catalog)
+                const slotLabel = q.resultKey === 'win' ? 'Pick the winner'
+                                : q.resultKey === 'place' ? 'Pick to finish 2nd'
+                                : q.resultKey === 'show' ? 'Pick to finish 3rd'
+                                : 'Pick a horse';
+                pickUI = `<label class="pool-alloc-pick-label">${slotLabel}</label>
+                    <select data-pick-key="${q.id}">
+                        <option value="">— pick —</option>
+                        ${contestants.map(c => optionFor(c, v)).join('')}
+                    </select>`;
+                break;
+            }
             case 'pickLongshot': {
                 const longshots = contestants.filter(c => c.isLongshot);
                 if (longshots.length === 0) {
