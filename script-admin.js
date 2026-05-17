@@ -50,6 +50,11 @@ async function initializeAdmin() {
     }
 
     try {
+        // Phase 1 schema backfill — idempotent; bails fast if already run.
+        if (window.MigrationPhase1) {
+            await window.MigrationPhase1.run(db);
+        }
+
         // Load all data with proper sequencing - AWAIT each one
         await loadEvents();
         await loadEventOptions(); // Make sure this completes before moving on
@@ -148,15 +153,26 @@ async function loadEvents() {
             return;
         }
         
+        const lifecycleBadge = (lc) => {
+            const colors = { draft: '#888', accepting: '#2e7d32', locked: '#b8860b', complete: '#1565c0', archived: '#777' };
+            const labels = { draft: 'draft', accepting: 'accepting', locked: 'locked', complete: 'complete', archived: 'archived' };
+            const c = colors[lc] || '#666';
+            return `<span style="display:inline-block; padding:1px 6px; font-size:11px; border-radius:3px; background:${c}; color:#fff; margin-left:6px;">${labels[lc] || lc || '—'}</span>`;
+        };
+
         snapshot.forEach(doc => {
             const data = doc.data();
+            const featured = (data.isFeatured !== undefined) ? data.isFeatured : !!data.isActive;
+            const lifecycle = window.MigrationPhase1 ? window.MigrationPhase1.inferLifecycle(data) : (data.lifecycle || '—');
+            const code = data.eventCode ? `<code style="font-size:11px; background:#eee; padding:1px 5px; border-radius:3px;">${data.eventCode}</code>` : '';
             const eventDiv = document.createElement('div');
             eventDiv.className = 'event-item';
             eventDiv.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
-                        <strong>${data.name}</strong>
-                        ${data.isActive ? '<span style="color: green; font-weight: bold;"> (ACTIVE)</span>' : ''}
+                        <strong>${data.name}</strong> ${code}
+                        ${featured ? '<span style="color: green; font-weight: bold;"> ★ FEATURED</span>' : ''}
+                        ${lifecycleBadge(lifecycle)}
                         <div style="font-size: 12px; color: #666;">${data.date}</div>
                         <div style="font-size: 12px; color: #666;">Collection: ${data.collectionName}</div>
                     </div>
@@ -299,16 +315,24 @@ function setupImagePreview() {
 
 async function saveEvent(eventData, eventId = null) {
     try {
-        // If setting this event as active, deactivate all others first
-        if (eventData.isActive) {
-            const activeSnapshot = await db.collection('events').where('isActive', '==', true).get();
-            const batch = db.batch();
-            activeSnapshot.docs.forEach(doc => {
-                batch.update(doc.ref, { isActive: false });
-            });
-            await batch.commit();
+        // Uniqueness check for eventCode — must be unique across all events.
+        if (eventData.eventCode) {
+            const codeMatch = await db.collection('events')
+                .where('eventCode', '==', eventData.eventCode)
+                .get();
+            const collides = codeMatch.docs.find(d => d.id !== eventId);
+            if (collides) {
+                const other = collides.data().name || '(unnamed)';
+                console.error(`Event code "${eventData.eventCode}" already in use by "${other}".`);
+                const msg = document.getElementById('event-message');
+                if (msg) {
+                    msg.textContent = `Event code "${eventData.eventCode}" is already used by "${other}". Pick a different code.`;
+                    msg.style.color = 'red';
+                }
+                return false;
+            }
         }
-        
+
         if (eventId) {
             // Update existing event
             await db.collection('events').doc(eventId).update(eventData);
@@ -346,7 +370,19 @@ async function editEvent(eventId) {
         document.getElementById('event-menu').value = Array.isArray(data.menu) ? data.menu.join('\n') : '';
         document.getElementById('event-bring').value = data.whatToBring || '';
         document.getElementById('event-schedule').value = Array.isArray(data.schedule) ? data.schedule.join('\n') : '';
-        document.getElementById('event-active').checked = data.isActive || false;
+        // isFeatured replaces isActive; for legacy events not yet migrated, fall back to isActive
+        const featuredVal = (data.isFeatured !== undefined) ? data.isFeatured : !!data.isActive;
+        const featuredEl = document.getElementById('event-featured');
+        if (featuredEl) featuredEl.checked = !!featuredVal;
+
+        const notifyEl = document.getElementById('event-notify-admin');
+        if (notifyEl) notifyEl.checked = data.notifyAdminOnEntry !== false; // default true
+
+        const lifecycleEl = document.getElementById('event-lifecycle');
+        if (lifecycleEl) {
+            const inferred = window.MigrationPhase1 ? window.MigrationPhase1.inferLifecycle(data) : (data.lifecycle || 'accepting');
+            lifecycleEl.value = inferred;
+        }
 
         // Event type + pool fields
         const typeSelect = document.getElementById('event-type');
@@ -461,6 +497,10 @@ function clearEventForm() {
         modeSel.value = 'fixed';
         modeSel.dispatchEvent(new Event('change'));
     }
+    const lifecycleEl = document.getElementById('event-lifecycle');
+    if (lifecycleEl) lifecycleEl.value = 'accepting';
+    const notifyEl = document.getElementById('event-notify-admin');
+    if (notifyEl) notifyEl.checked = true;
 }
 
 async function loadEventOptions() {
@@ -487,31 +527,31 @@ async function loadEventOptions() {
             return;
         }
 
-        // Find active event
-        const activeEvent = snapshot.docs.find(doc => doc.data().isActive);
-        console.log('Active event found:', activeEvent ? activeEvent.data().name : 'none');
-        
-        // Add special RSVP-only option for active event first
-        if (activeEvent) {
-            const activeData = activeEvent.data();
+        // Prefer isFeatured, fall back to isActive for legacy events not yet migrated.
+        const isFeaturedDoc = (d) => (d.data().isFeatured !== undefined ? d.data().isFeatured : d.data().isActive);
+
+        // RSVP-only "update existing entrants" option for each featured event.
+        const featuredEvents = snapshot.docs.filter(isFeaturedDoc);
+        featuredEvents.forEach((evDoc, idx) => {
+            const evData = evDoc.data();
             const option = document.createElement('option');
-            option.value = `rsvp-only-${activeData.collectionName}`;
-            option.textContent = `${activeData.name} - RSVP'd Only (Yes/Maybe)`;
-            option.setAttribute('data-event-name', activeData.name);
-            option.setAttribute('data-event-id', activeEvent.id);
-            option.setAttribute('data-event-type', activeData.type || 'gathering');
+            option.value = `rsvp-only-${evData.collectionName}`;
+            option.textContent = `${evData.name} - Entrants Only (update message)`;
+            option.setAttribute('data-event-name', evData.name);
+            option.setAttribute('data-event-id', evDoc.id);
+            option.setAttribute('data-event-type', evData.type || 'gathering');
+            option.setAttribute('data-event-code', evData.eventCode || '');
             option.setAttribute('data-is-rsvp-only', 'true');
             eventSelect.appendChild(option);
-            console.log('Added RSVP-only option:', option.textContent);
-            
-            // Add a separator
+        });
+        if (featuredEvents.length > 0) {
             const separator = document.createElement('option');
             separator.disabled = true;
             separator.textContent = '──────────────────';
             eventSelect.appendChild(separator);
         }
-        
-        // Add regular event options
+
+        // Full event list (any event can be selected for invite send).
         snapshot.forEach(doc => {
             const data = doc.data();
             const option = document.createElement('option');
@@ -520,16 +560,16 @@ async function loadEventOptions() {
             option.setAttribute('data-event-name', data.name);
             option.setAttribute('data-event-id', doc.id);
             option.setAttribute('data-event-type', data.type || 'gathering');
+            option.setAttribute('data-event-code', data.eventCode || '');
             option.setAttribute('data-is-rsvp-only', 'false');
-            if (data.isActive) {
-                option.textContent += ' (ACTIVE)';
-                // Don't auto-select if we have RSVP option
-                if (!activeEvent) {
+            if (isFeaturedDoc(doc)) {
+                option.textContent += ' ★';
+                // Auto-select first featured if no RSVP-only option above
+                if (featuredEvents.length === 0) {
                     option.selected = true;
                 }
             }
             eventSelect.appendChild(option);
-            console.log('Added regular option:', option.textContent);
         });
         
         console.log('Final dropdown HTML:', eventSelect.innerHTML);
@@ -707,6 +747,8 @@ function updateDefaultMessage() {
     const eventName = selectedOption ? selectedOption.getAttribute('data-event-name') : null;
     const eventId = selectedOption ? selectedOption.getAttribute('data-event-id') : '';
     const eventType = selectedOption ? selectedOption.getAttribute('data-event-type') : 'gathering';
+    const eventCode = (selectedOption ? selectedOption.getAttribute('data-event-code') : '') || '';
+    const codeUpper = eventCode.toUpperCase();
     const isRSVPOnly = selectedOption && selectedOption.getAttribute('data-is-rsvp-only') === 'true';
 
     if (!eventName || eventName === 'No events created yet') return;
@@ -728,26 +770,30 @@ Thanks for being in!`;
         const mathLink = eventId
             ? `https://75pinegrove.com/how-the-math-works.html?event=${eventId}`
             : 'https://75pinegrove.com/how-the-math-works.html';
+        const codeSuffix = codeUpper ? ' ' + codeUpper : '';
         defaultMessage = `You're in for ${eventName} — friends-only pool at Pine Grove Gatherings!
 
-Allocate your bankroll across 5 bets (Top 5, Time O/U, Trifecta, Exacta, Long Shot). Make your picks before lock:
+Allocate your bankroll across the bet slip. Make your picks before lock:
 ${eventLink}
 
 How it works: ${mathLink}
 Password: FriendsOnly2025
 
 Text commands to this number anytime:
-• PICKS — see your slip
-• STATS — leaderboard & odds
-• SAY <msg> — trash talk to all entrants
-• MUTE / UNMUTE — silence this event`;
+• PICKS${codeSuffix} — see your slip
+• STATS${codeSuffix} — leaderboard & odds
+• SAY${codeSuffix} <msg> — trash talk to all entrants
+• MUTE${codeSuffix} / UNMUTE${codeSuffix} — silence this event${codeUpper ? `
+
+When multiple events are running you can add the code ${codeUpper} after any command to be explicit. Bare commands work when only one event is open.` : ''}`;
     } else {
         // Default: gathering RSVP invite
+        const codeHint = codeUpper ? `\n\nIf multiple events are running, you can append ${codeUpper}: e.g. YES ${codeUpper} 2.` : '';
         defaultMessage = `You're invited to ${eventName} at Pine Grove Gatherings!
 
 RSVP options:
 • Reply to this text: YES [# of guests], MAYBE [# of guests], or NO
-• Or visit https://75pinegrove.com (password: FriendsOnly2025)`;
+• Or visit https://75pinegrove.com (password: FriendsOnly2025)${codeHint}`;
     }
 
     messageTextarea.value = defaultMessage;
@@ -1445,6 +1491,22 @@ if (eventForm) {
         const eventType = typeSelect ? typeSelect.value : 'gathering';
         const eventCodeRaw = (document.getElementById('event-code').value || '').trim().toLowerCase();
 
+        if (!eventCodeRaw) {
+            document.getElementById('event-message').textContent = 'Event code is required (3–12 lowercase letters/digits).';
+            document.getElementById('event-message').style.color = 'red';
+            submitButton.disabled = false;
+            submitButton.textContent = originalText;
+            return;
+        }
+        if (!/^[a-z0-9]{3,12}$/.test(eventCodeRaw)) {
+            document.getElementById('event-message').textContent = 'Event code must be 3–12 lowercase letters/digits.';
+            document.getElementById('event-message').style.color = 'red';
+            submitButton.disabled = false;
+            submitButton.textContent = originalText;
+            return;
+        }
+
+        const lifecycleEl = document.getElementById('event-lifecycle');
         const eventData = {
             name: eventName,
             type: eventType,
@@ -1455,19 +1517,14 @@ if (eventForm) {
             whatToBring: document.getElementById('event-bring').value,
             schedule: document.getElementById('event-schedule').value.split('\n').filter(item => item.trim()),
             collectionName: createCollectionName(eventName),
-            isActive: document.getElementById('event-active').checked
+            eventCode: eventCodeRaw,
+            isFeatured: document.getElementById('event-featured').checked,
+            notifyAdminOnEntry: document.getElementById('event-notify-admin').checked,
+            lifecycle: lifecycleEl ? lifecycleEl.value : 'accepting',
+            // Transitional: mirror isActive so legacy readers (script-index, pool-admin) keep working
+            // until step 5 retires the field. They'll switch to isFeatured then.
+            isActive: document.getElementById('event-featured').checked
         };
-
-        if (eventCodeRaw) {
-            if (!/^[a-z0-9]{3,12}$/.test(eventCodeRaw)) {
-                document.getElementById('event-message').textContent = 'Event code must be 3–12 lowercase letters/digits.';
-                document.getElementById('event-message').style.color = 'red';
-                submitButton.disabled = false;
-                submitButton.textContent = originalText;
-                return;
-            }
-            eventData.eventCode = eventCodeRaw;
-        }
 
         if (eventType === 'pool') {
             const closesAtRaw = document.getElementById('pool-closes-at').value;

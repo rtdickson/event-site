@@ -1,5 +1,7 @@
 require('dotenv').config();
 const { onRequest } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const twilio = require('twilio');
 const cors = require('cors');
@@ -99,6 +101,144 @@ RSVP options:
     });
 });
 
+// ============================================================================
+// Multi-event SMS routing (Phase 1)
+// ============================================================================
+// resolveTargetEvent(from, body, typeHint) returns:
+//   { event, eventDoc, code, source, body: cleanedBody }    — success
+//   { event: null, source: 'none', error: 'no-events' | 'ambiguous', candidates }
+//
+// source ∈ 'explicit-code' | 'sms-context' | 'single-accepting' | 'single-featured' | 'none'
+// typeHint ∈ 'pool' | 'gathering' | null   (null = match any)
+//
+// Resolution order:
+//   1. Explicit code in the body (e.g., "STATS PKNS26")
+//   2. sms-context for the sender (their last event)
+//   3. Single accepting event matching the type hint
+//   4. Single featured (visible, not archived) event matching the type hint
+//   5. Ambiguous — return candidates so the caller can prompt the user
+async function resolveTargetEvent(from, body, typeHint = null) {
+    const rawBody = String(body || '');
+    const tokens = rawBody.trim().toLowerCase().split(/\s+/);
+
+    // 1) Explicit code
+    const candidateCodes = tokens.filter(t => /^[a-z0-9]{3,12}$/.test(t));
+    for (const code of candidateCodes) {
+        const snap = await db.collection('events').where('eventCode', '==', code).limit(1).get();
+        if (!snap.empty) {
+            const doc = snap.docs[0];
+            const cleaned = stripCode(rawBody, code);
+            return { event: doc.data(), eventDoc: doc, code, source: 'explicit-code', body: cleaned };
+        }
+    }
+
+    // 2) sms-context for the sender (only honored if type still matches and event is reachable)
+    const norm = normalizePhone(from);
+    if (norm) {
+        try {
+            const ctxSnap = await db.collection('sms-context').doc(norm).get();
+            if (ctxSnap.exists) {
+                const lastCode = ctxSnap.data().lastEventCode;
+                if (lastCode) {
+                    const codeSnap = await db.collection('events').where('eventCode', '==', lastCode).limit(1).get();
+                    if (!codeSnap.empty) {
+                        const doc = codeSnap.docs[0];
+                        const data = doc.data();
+                        const lc = data.lifecycle || (data.isFeatured || data.isActive ? 'accepting' : 'archived');
+                        const matchesType = !typeHint || data.type === typeHint;
+                        const reachable = lc === 'accepting' || lc === 'locked' || lc === 'complete';
+                        if (matchesType && reachable) {
+                            return { event: data, eventDoc: doc, code: lastCode, source: 'sms-context', body: rawBody };
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[resolveTargetEvent] sms-context lookup failed:', e.message);
+        }
+    }
+
+    // 3) Single accepting event of the right type
+    const acceptingSnap = await db.collection('events').where('lifecycle', '==', 'accepting').get();
+    let candidates = acceptingSnap.docs.map(d => ({ doc: d, data: d.data() }));
+    if (typeHint) candidates = candidates.filter(c => (c.data.type || 'gathering') === typeHint);
+    if (candidates.length === 1) {
+        const c = candidates[0];
+        return { event: c.data, eventDoc: c.doc, code: c.data.eventCode, source: 'single-accepting', body: rawBody };
+    }
+
+    // 4) Fallback: single featured (visible) event of the right type — covers legacy events
+    //    not yet migrated to lifecycle but still flagged isActive/isFeatured
+    if (candidates.length === 0) {
+        const featSnap = await db.collection('events').get();
+        let wider = featSnap.docs
+            .map(d => ({ doc: d, data: d.data() }))
+            .filter(c => (c.data.isFeatured !== undefined ? c.data.isFeatured : c.data.isActive))
+            .filter(c => {
+                const lc = c.data.lifecycle;
+                return !lc || (lc !== 'draft' && lc !== 'archived');
+            });
+        if (typeHint) wider = wider.filter(c => (c.data.type || 'gathering') === typeHint);
+        if (wider.length === 1) {
+            const c = wider[0];
+            return { event: c.data, eventDoc: c.doc, code: c.data.eventCode, source: 'single-featured', body: rawBody };
+        }
+        if (wider.length > 1) {
+            return {
+                event: null, source: 'none', error: 'ambiguous',
+                candidates: wider.map(c => ({ code: c.data.eventCode, name: c.data.name, type: c.data.type }))
+            };
+        }
+        return { event: null, source: 'none', error: 'no-events' };
+    }
+
+    // Multiple accepting — ambiguous
+    return {
+        event: null, source: 'none', error: 'ambiguous',
+        candidates: candidates.map(c => ({ code: c.data.eventCode, name: c.data.name, type: c.data.type }))
+    };
+}
+
+function stripCode(body, code) {
+    if (!code) return body;
+    const re = new RegExp('\\b' + code + '\\b', 'gi');
+    return String(body).replace(re, '').replace(/\s+/g, ' ').trim();
+}
+
+async function writeSmsContext(from, code) {
+    if (!code) return;
+    const norm = normalizePhone(from);
+    if (!norm) return;
+    try {
+        await db.collection('sms-context').doc(norm).set({
+            phone: from,
+            lastEventCode: code,
+            lastInteractionAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        console.warn('[sms-context] write failed:', err.message);
+    }
+}
+
+// Build the "I'm confused, here are your options" reply for an ambiguous resolution.
+function ambiguousReply(verb, resolution) {
+    if (!resolution.candidates || resolution.candidates.length === 0) {
+        return `No active events right now. Visit https://75pinegrove.com.`;
+    }
+    const examples = resolution.candidates
+        .filter(c => c.code)
+        .slice(0, 3)
+        .map(c => `${verb} ${c.code.toUpperCase()}${verb === 'YES' ? ' [# guests]' : ''}`)
+        .join(' or ');
+    return `Multiple events are open. Reply with: ${examples}.`;
+}
+
+function noEventReply(typeHint) {
+    if (typeHint === 'pool') return 'No pool is open right now. Visit https://75pinegrove.com.';
+    if (typeHint === 'gathering') return 'No gathering is open right now. Visit https://75pinegrove.com.';
+    return 'No active events right now. Visit https://75pinegrove.com.';
+}
+
 exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
     return corsMiddleware(req, res, async () => {
         console.log('handleSMS - Method:', req.method, 'Origin:', req.get('origin'), 'Body:', req.body);
@@ -116,37 +256,11 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
             const adminNumbers = ['+16135368709','+16135615101'];
             const messageText = Body.trim();
             const lower = messageText.toLowerCase();
+            // First token after optional verb (used to detect command verbs robustly)
+            const firstToken = lower.split(/\s+/)[0] || '';
 
-            // MUTE / UNMUTE — per-event opt-out (active event only)
-            if (lower === 'mute' || lower === 'unmute') {
-                return handleMuteToggle(From, lower === 'mute', res);
-            }
-
-            // PICKS — anyone can request their own slip back from the active pool
-            if (lower === 'picks') {
-                const activeForPicks = await db.collection('events').where('isActive', '==', true).limit(1).get();
-                if (!activeForPicks.empty && activeForPicks.docs[0].data().type === 'pool') {
-                    return handleMyPicks(From, activeForPicks.docs[0].data(), res);
-                }
-                await twilioClient.messages.create({
-                    body: 'No active pool event right now.',
-                    from: process.env.TWILIO_PHONE_NUMBER,
-                    to: From
-                });
-                return res.status(200).send('<Response></Response>');
-            }
-
-            // STATS — for pool events, anyone can request (gathering STATS stays admin-only below)
-            if (lower === 'stats') {
-                const activeForStats = await db.collection('events').where('isActive', '==', true).limit(1).get();
-                if (!activeForStats.empty && activeForStats.docs[0].data().type === 'pool') {
-                    return handlePoolStats(From, activeForStats.docs[0].data(), res);
-                }
-                // else fall through to admin handler below
-            }
-
-            // JULEP — recipe (theme command, works for anyone)
-            if (lower === 'julep') {
+            // JULEP — recipe (theme command, works for anyone; no event context needed)
+            if (lower === 'julep' || firstToken === 'julep') {
                 await twilioClient.messages.create({
                     body: 'Mint Julep:\n• 2 oz bourbon\n• 1 tsp sugar (or simple syrup)\n• 8-10 mint leaves\n• Crushed ice\n\nMuddle mint with sugar in a copper cup. Fill with crushed ice. Pour bourbon. Stir til frosted. Top with more ice. Garnish with mint sprig. Sip slowly.',
                     from: process.env.TWILIO_PHONE_NUMBER,
@@ -155,40 +269,97 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
                 return res.status(200).send('<Response></Response>');
             }
 
-            // SAY <message> — relay trash talk to all entrants of the active event
-            if (/^say\s+/i.test(messageText)) {
-                return handleTrashTalk(From, messageText, res);
+            // MUTE / UNMUTE — apply to the resolved event (any type)
+            if (firstToken === 'mute' || firstToken === 'unmute') {
+                const resolution = await resolveTargetEvent(From, messageText, null);
+                if (!resolution.event) {
+                    await twilioClient.messages.create({
+                        body: resolution.error === 'ambiguous' ? ambiguousReply(firstToken.toUpperCase(), resolution) : 'No active event to mute/unmute.',
+                        from: process.env.TWILIO_PHONE_NUMBER, to: From
+                    });
+                    return res.status(200).send('<Response></Response>');
+                }
+                await writeSmsContext(From, resolution.code);
+                return handleMuteToggle(From, firstToken === 'mute', resolution.eventDoc, resolution.event, res);
             }
 
-            if (adminNumbers.includes(From)) {
-                // Handle admin commands
-                let responseMessage = '';
-                
-                if (lower === 'update') {
-                    responseMessage = await getEventUpdate();
-                } else if (lower === 'wic') {
-                    responseMessage = await getWhoIsComing();
-                } else if (lower === 'stats') {
-                    responseMessage = await getEventStats();
-                } else if (lower === 'help') {
-                    responseMessage = 'Commands:\nUPDATE - Event details\nWIC - Who is coming\nSTATS - Guest count\nSAY <msg> - trash talk relay\nMUTE / UNMUTE - silence this event\nJULEP - mint julep recipe\nHELP - This message';
-                } else {
-                    // If admin sends RSVP-style message, treat as regular RSVP
-                    return handleRegularRSVP(From, Body);
+            // PICKS — pool-scoped
+            if (firstToken === 'picks') {
+                const resolution = await resolveTargetEvent(From, messageText, 'pool');
+                if (!resolution.event) {
+                    await twilioClient.messages.create({
+                        body: resolution.error === 'ambiguous' ? ambiguousReply('PICKS', resolution) : noEventReply('pool'),
+                        from: process.env.TWILIO_PHONE_NUMBER, to: From
+                    });
+                    return res.status(200).send('<Response></Response>');
                 }
-                
-                // Send admin response
+                await writeSmsContext(From, resolution.code);
+                return handleMyPicks(From, resolution.event, res);
+            }
+
+            // STATS — pool-scoped if a pool is reachable, else falls through to admin gathering stats below
+            if (firstToken === 'stats') {
+                const resolution = await resolveTargetEvent(From, messageText, 'pool');
+                if (resolution.event) {
+                    await writeSmsContext(From, resolution.code);
+                    return handlePoolStats(From, resolution.event, res);
+                }
+                // No pool reachable — admin gathering STATS handler below will pick this up
+            }
+
+            // SAY <message> — trash talk relay to the resolved pool's entrants
+            if (firstToken === 'say') {
+                const resolution = await resolveTargetEvent(From, messageText, 'pool');
+                if (!resolution.event) {
+                    await twilioClient.messages.create({
+                        body: resolution.error === 'ambiguous' ? ambiguousReply('SAY', resolution) : noEventReply('pool'),
+                        from: process.env.TWILIO_PHONE_NUMBER, to: From
+                    });
+                    return res.status(200).send('<Response></Response>');
+                }
+                await writeSmsContext(From, resolution.code);
+                return handleTrashTalk(From, resolution.body || messageText, resolution.event, res);
+            }
+
+            // PICK <#>  — pool-scoped winner pick (must come AFTER the verb-only commands above)
+            if (firstToken === 'pick') {
+                const resolution = await resolveTargetEvent(From, messageText, 'pool');
+                if (!resolution.event) {
+                    await twilioClient.messages.create({
+                        body: resolution.error === 'ambiguous' ? ambiguousReply('PICK', resolution) : noEventReply('pool'),
+                        from: process.env.TWILIO_PHONE_NUMBER, to: From
+                    });
+                    return res.status(200).send('<Response></Response>');
+                }
+                await writeSmsContext(From, resolution.code);
+                return handlePoolPick(From, resolution.body || messageText, resolution.event, resolution.event.collectionName, resolution.event.name);
+            }
+
+            // Admin-only verbs against the resolved gathering
+            if (adminNumbers.includes(From) && (lower === 'update' || lower === 'wic' || lower === 'help' || lower === 'stats')) {
+                let responseMessage = '';
+                if (lower === 'help') {
+                    responseMessage = 'Commands:\nUPDATE - Event details\nWIC - Who is coming\nSTATS - Guest count or pool leaderboard\nPICKS - your pool slip\nPICK <#> - quick pool winner pick\nSAY <msg> - trash talk relay\nMUTE / UNMUTE - silence an event\nJULEP - recipe\n\nAppend an event code (e.g. STATS BEL26) to target a specific event when multiple are live.';
+                } else {
+                    const resolution = await resolveTargetEvent(From, messageText, 'gathering');
+                    if (!resolution.event) {
+                        responseMessage = resolution.error === 'ambiguous' ? ambiguousReply(lower.toUpperCase(), resolution) : noEventReply('gathering');
+                    } else {
+                        await writeSmsContext(From, resolution.code);
+                        if (lower === 'update') responseMessage = await getEventUpdate(resolution.event);
+                        else if (lower === 'wic') responseMessage = await getWhoIsComing(resolution.event);
+                        else if (lower === 'stats') responseMessage = await getEventStats(resolution.event);
+                    }
+                }
                 await twilioClient.messages.create({
                     body: responseMessage,
-                    from: process.env.TWILIO_PHONE_NUMBER,
-                    to: From
+                    from: process.env.TWILIO_PHONE_NUMBER, to: From
                 });
-                
                 return res.status(200).send('<Response></Response>');
-            } else {
-                // Handle regular RSVP
-                return handleRegularRSVP(From, Body);
             }
+
+            // Fall through: treat as RSVP (YES/NO/MAYBE) or pool fallback
+            return handleRegularRSVP(From, Body);
             
         } catch (error) {
             console.error('Error handling SMS:', error);
@@ -197,55 +368,61 @@ exports.handleSMS = onRequest({ invoker: 'public' }, async (req, res) => {
     });
 });
 
-// Move your existing RSVP logic into this function
+// Handles bare YES/NO/MAYBE replies (and bare-message fallthroughs).
+// Uses resolveTargetEvent so multi-event scenarios route correctly.
 async function handleRegularRSVP(From, Body) {
-    // Find the active event
-    const activeEventSnapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
+    const lower = (Body || '').trim().toLowerCase();
+    const firstToken = lower.split(/\s+/)[0] || '';
+    const isRsvpVerb = firstToken === 'yes' || firstToken === 'no' || firstToken === 'maybe';
 
-    if (activeEventSnapshot.empty) {
-        console.log('No active event found for SMS RSVP');
-        await twilioClient.messages.create({
-            body: 'Sorry, there are currently no active events to RSVP for. Visit https://75pinegrove.com for more information.',
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: From
-        });
+    // Type hint: RSVP verbs strongly suggest gathering, but with no verb we can match either type
+    const typeHint = isRsvpVerb ? 'gathering' : null;
+    const resolution = await resolveTargetEvent(From, Body, typeHint);
+
+    if (!resolution.event) {
+        const msg = resolution.error === 'ambiguous'
+            ? ambiguousReply(isRsvpVerb ? firstToken.toUpperCase() : 'YES', resolution)
+            : 'Sorry, no active events to respond to right now. Visit https://75pinegrove.com for details.';
+        await twilioClient.messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER, to: From });
         return;
     }
 
-    const activeEvent = activeEventSnapshot.docs[0].data();
+    const activeEvent = resolution.event;
     const eventCollectionName = activeEvent.collectionName;
     const eventName = activeEvent.name;
+    const cleanedBody = resolution.body || Body;
 
-    // Branch: pool events get the PICK parser
+    // Branch: pool events get the PICK parser (handles bare "PICK 7" style messages)
     if (activeEvent.type === 'pool') {
-        return handlePoolPick(From, Body, activeEvent, eventCollectionName, eventName);
+        await writeSmsContext(From, resolution.code);
+        return handlePoolPick(From, cleanedBody, activeEvent, eventCollectionName, eventName);
     }
 
-    console.log(`Processing SMS RSVP for active event: ${eventName} (collection: ${eventCollectionName})`);
-    
-    const responseText = Body.trim().toLowerCase();
+    console.log(`Processing SMS RSVP for: ${eventName} (collection: ${eventCollectionName})`);
+
+    const responseText = cleanedBody.trim().toLowerCase();
     let attending = '';
     let guests = 0;
-    
+
     if (responseText.startsWith('yes')) {
         attending = 'Yes';
-        guests = parseInt(responseText.split(' ')[1]) || 1;
+        guests = parseInt(responseText.split(/\s+/)[1]) || 1;
     } else if (responseText.startsWith('no')) {
         attending = 'No';
         guests = 0;
     } else if (responseText.startsWith('maybe')) {
         attending = 'Maybe';
-        guests = parseInt(responseText.split(' ')[1]) || 1;
+        guests = parseInt(responseText.split(/\s+/)[1]) || 1;
     } else {
+        const codeHint = resolution.code ? ` (or add code ${resolution.code.toUpperCase()})` : '';
         await twilioClient.messages.create({
-            body: `Please reply with: YES [# guests], NO, or MAYBE [# guests] to RSVP for ${eventName}. Or visit https://75pinegrove.com`,
+            body: `Reply YES [# guests], NO, or MAYBE [# guests] to RSVP for ${eventName}${codeHint}. Or visit https://75pinegrove.com`,
             from: process.env.TWILIO_PHONE_NUMBER,
             to: From
         });
         return;
     }
-    
-    // Save RSVP to the active event's collection
+
     await db.collection(eventCollectionName).add({
         name: 'Unknown (SMS)',
         phone: From,
@@ -254,14 +431,15 @@ async function handleRegularRSVP(From, Body) {
         notes: '',
         timestamp: admin.firestore.FieldValue.serverTimestamp()
     });
-    
-    // Send confirmation message with event name
+
+    await writeSmsContext(From, resolution.code);
+
     await twilioClient.messages.create({
         body: `RSVP recorded for ${eventName}! Visit https://75pinegrove.com for event details.`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: From
     });
-    
+
     console.log(`SMS RSVP recorded from: ${From} for event: ${eventName}`);
 }
 
@@ -527,20 +705,17 @@ function isMuted(event, phone) {
     return mutedPhonesFor(event).includes(normalizePhone(phone));
 }
 
-// MUTE / UNMUTE: toggle the sender on the active event's mutedPhones list
-async function handleMuteToggle(From, mute, res) {
+// MUTE / UNMUTE: toggle the sender on the resolved event's mutedPhones list
+async function handleMuteToggle(From, mute, eventDoc, event, res) {
     try {
-        const activeSnap = await db.collection('events').where('isActive', '==', true).limit(1).get();
-        if (activeSnap.empty) {
+        if (!eventDoc || !event) {
             await twilioClient.messages.create({
-                body: 'No active event right now.',
+                body: 'No event to mute/unmute. Visit https://75pinegrove.com for what is live.',
                 from: process.env.TWILIO_PHONE_NUMBER,
                 to: From
             });
             return res.status(200).send('<Response></Response>');
         }
-        const eventDoc = activeSnap.docs[0];
-        const event = eventDoc.data();
         const eventName = event.name || 'this event';
 
         const current = (event.poolConfig && event.poolConfig.mutedPhones) || [];
@@ -584,10 +759,10 @@ async function handleMuteToggle(From, mute, res) {
     }
 }
 
-// SAY <message> — relay trash talk to all entrants of the active event.
+// SAY <message> — relay trash talk to all entrants of the resolved event.
 // Sender's name from contacts collection (falls back to phone last 4).
 // Excludes the sender. Reply with delivery count.
-async function handleTrashTalk(From, Body, res) {
+async function handleTrashTalk(From, Body, activeEvent, res) {
     console.log('SAY received from', From, 'body:', JSON.stringify(Body));
     try {
         const message = Body.replace(/^say\s+/i, '').trim();
@@ -609,9 +784,7 @@ async function handleTrashTalk(From, Body, res) {
             return res.status(200).send('<Response></Response>');
         }
 
-        // Find active event
-        const activeSnap = await db.collection('events').where('isActive', '==', true).limit(1).get();
-        if (activeSnap.empty) {
+        if (!activeEvent) {
             await twilioClient.messages.create({
                 body: 'No active event to broadcast to.',
                 from: process.env.TWILIO_PHONE_NUMBER,
@@ -619,7 +792,6 @@ async function handleTrashTalk(From, Body, res) {
             });
             return res.status(200).send('<Response></Response>');
         }
-        const activeEvent = activeSnap.docs[0].data();
         const collection = activeEvent.collectionName;
         if (!collection) {
             return res.status(200).send('<Response></Response>');
@@ -997,31 +1169,19 @@ async function handlePoolPick(From, Body, activeEvent, eventCollectionName, even
     console.log(`SMS pool pick recorded from ${From}: #${pickNum} ${contestant.name}`);
 }
 
-// Add these new admin command functions
-async function getEventUpdate() {
-    const activeEvent = await getActiveEventData();
-    if (!activeEvent) return 'No active event found.';
-    
-    const { eventData } = activeEvent;
-    
+// Admin gathering commands — each accepts the resolved event passed in by handleSMS.
+async function getEventUpdate(eventData) {
+    if (!eventData) return 'No event found.';
     let message = `${eventData.name}\n`;
     message += `Date: ${eventData.date}\n`;
-    if (eventData.description) {
-        message += `Details: ${eventData.description}\n`;
-    }
-    if (eventData.whatToBring) {
-        message += `Bring: ${eventData.whatToBring}\n`;
-    }
-    
+    if (eventData.description) message += `Details: ${eventData.description}\n`;
+    if (eventData.whatToBring) message += `Bring: ${eventData.whatToBring}\n`;
     return message;
 }
 
-async function getWhoIsComing() {
-    const activeEvent = await getActiveEventData();
-    if (!activeEvent) return 'No active event found.';
-    
-    const { eventData, rsvps } = activeEvent;
-    
+async function getWhoIsComing(eventData) {
+    if (!eventData || !eventData.collectionName) return 'No event found.';
+    const rsvps = await db.collection(eventData.collectionName).orderBy('timestamp', 'desc').get();
     const attendees = [];
     rsvps.forEach(doc => {
         const rsvp = doc.data();
@@ -1031,59 +1191,109 @@ async function getWhoIsComing() {
             attendees.push(`${rsvp.name}${guests}${status}`);
         }
     });
-    
-    if (attendees.length === 0) {
-        return `${eventData.name}: No confirmed attendees yet.`;
-    }
-    
-    let message = `${eventData.name} - Coming:\n\n`;
-    message += attendees.join('\n');
-    
+    if (attendees.length === 0) return `${eventData.name}: No confirmed attendees yet.`;
+    let message = `${eventData.name} - Coming:\n\n` + attendees.join('\n');
     return message.length > 1500 ? message.substring(0, 1400) + '...(more)' : message;
 }
 
-async function getEventStats() {
-    const activeEvent = await getActiveEventData();
-    if (!activeEvent) return 'No active event found.';
-    
-    const { eventData, rsvps } = activeEvent;
-    
+async function getEventStats(eventData) {
+    if (!eventData || !eventData.collectionName) return 'No event found.';
+    const rsvps = await db.collection(eventData.collectionName).orderBy('timestamp', 'desc').get();
     let yesCount = 0, maybeCount = 0, noCount = 0;
-    
     rsvps.forEach(doc => {
         const rsvp = doc.data();
         const guests = rsvp.guests || 1;
-        
-        if (rsvp.attending === 'Yes') {
-            yesCount += guests;
-        } else if (rsvp.attending === 'Maybe') {
-            maybeCount += guests;
-        } else if (rsvp.attending === 'No') {
-            noCount += guests;
-        }
+        if (rsvp.attending === 'Yes') yesCount += guests;
+        else if (rsvp.attending === 'Maybe') maybeCount += guests;
+        else if (rsvp.attending === 'No') noCount += guests;
     });
-    
     return `${eventData.name}\nYes: ${yesCount} guests\nMaybe: ${maybeCount} guests\nNo: ${noCount} guests\nTotal Expected: ${yesCount + maybeCount}`;
 }
 
-async function getActiveEventData() {
-    const activeEventSnapshot = await db.collection('events')
-        .where('isActive', '==', true)
-        .limit(1)
-        .get();
-    
-    if (activeEventSnapshot.empty) {
+// ============================================================================
+// Lifecycle auto-transitions (Phase 1)
+// ============================================================================
+// accepting → locked   : scheduled every 5min; flips when closesAt + grace has passed
+// locked    → complete : Firestore trigger; flips when results become populated
+//
+// Admins can still manually override via the lifecycle dropdown in the form.
+
+const CLOSE_GRACE_MS = 60 * 1000;
+
+// Helper: does this event have meaningful results entered?
+function hasResultsEntered(eventData) {
+    if (!eventData || !eventData.poolConfig) return false;
+    const pc = eventData.poolConfig;
+    if (Array.isArray(pc.fullFinish) && pc.fullFinish.length > 0) return true;
+    if (pc.results && typeof pc.results === 'object') {
+        return Object.values(pc.results).some(v => v !== null && v !== undefined && v !== '');
+    }
+    return false;
+}
+
+// Helper: has the event's closesAt passed (with grace)?
+function isPastClose(eventData) {
+    const closesAt = eventData && eventData.poolConfig && eventData.poolConfig.closesAt;
+    if (!closesAt) {
+        // Non-pool events: fall back to event dateRaw
+        if (eventData && eventData.type === 'gathering' && eventData.dateRaw) {
+            const t = new Date(eventData.dateRaw).getTime();
+            return !isNaN(t) && t + CLOSE_GRACE_MS < Date.now();
+        }
+        return false;
+    }
+    const ms = closesAt.toMillis ? closesAt.toMillis()
+            : closesAt.seconds ? closesAt.seconds * 1000
+            : null;
+    if (!ms) return false;
+    return Date.now() > ms + CLOSE_GRACE_MS;
+}
+
+// Runs every 5 minutes — flips any 'accepting' events whose closesAt has passed.
+exports.lifecycleTickToLocked = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds: 60 }, async () => {
+    try {
+        const snap = await db.collection('events').where('lifecycle', '==', 'accepting').get();
+        let flipped = 0;
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            if (!isPastClose(data)) continue;
+            // Pool events flip to 'locked'; gatherings go straight to 'complete' after their event date.
+            const nextState = (data.type === 'pool') ? 'locked' : 'complete';
+            await doc.ref.update({ lifecycle: nextState, lifecycleAutoTransitionedAt: admin.firestore.FieldValue.serverTimestamp() });
+            console.log(`[lifecycleTick] ${data.name} (${data.eventCode}): accepting → ${nextState}`);
+            flipped++;
+        }
+        return { flipped };
+    } catch (err) {
+        console.error('[lifecycleTickToLocked] error:', err);
         return null;
     }
-    
-    const eventData = activeEventSnapshot.docs[0].data();
-    
-    const rsvpSnapshot = await db.collection(eventData.collectionName)
-        .orderBy('timestamp', 'desc')
-        .get();
-    
-    return {
-        eventData,
-        rsvps: rsvpSnapshot
-    };
-}
+});
+
+// Firestore trigger — flips 'locked' → 'complete' when results are saved.
+exports.lifecycleOnResults = onDocumentUpdated('events/{eventId}', async (event) => {
+    try {
+        const before = event.data && event.data.before ? event.data.before.data() : null;
+        const after = event.data && event.data.after ? event.data.after.data() : null;
+        if (!before || !after) return;
+
+        // Only consider pool events for this trigger
+        if (after.type !== 'pool') return;
+
+        const wasComplete = before.lifecycle === 'complete';
+        const isLockedOrAccepting = after.lifecycle === 'locked' || after.lifecycle === 'accepting';
+        if (wasComplete || !isLockedOrAccepting) return;
+
+        const beforeHadResults = hasResultsEntered(before);
+        const afterHasResults = hasResultsEntered(after);
+        if (afterHasResults && !beforeHadResults) {
+            await event.data.after.ref.update({
+                lifecycle: 'complete',
+                lifecycleAutoTransitionedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[lifecycleOnResults] ${after.name} (${after.eventCode}): ${after.lifecycle} → complete`);
+        }
+    } catch (err) {
+        console.error('[lifecycleOnResults] error:', err);
+    }
+});

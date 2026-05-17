@@ -164,8 +164,15 @@
         },
         {
             id: 'box3', category: 'Multi-horse',
-            catalogLabel: 'Top-3 Box — pick 3 in any order',
-            description: 'Pick 3 horses. Bet hits if all 3 finish in the top 3, any order. Sits above Exacta (pays more — harder bet) and above Trifecta (no order requirement, but you still need all 3 right horses).',
+            catalogLabel: 'Top-3 Box — pick 3, gradient (per-match × odds)',
+            description: 'Pick 3 horses for top 3 (any order). Multiplier = (# of picks in actual top 3) + (sum of decimal odds of hits). Zero hits = $0. Rewards picking longshots in the box.',
+            modes: ['fixed', 'allocate'],
+            template: { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', scoring: 'gradientOdds' }
+        },
+        {
+            id: 'box3_binary', category: 'Multi-horse',
+            catalogLabel: 'Top-3 Box (legacy binary) — all-or-nothing 7×',
+            description: 'Older Box-3: all 3 picks must finish top 3 in any order. Pays a flat 7× if hit, $0 otherwise. Kept for backward compat with prior events.',
             modes: ['fixed', 'allocate'],
             template: { id: 'box3', kind: 'unorderedTriple', label: 'Top-3 Box (any order)', payoffMultiplier: 7 }
         },
@@ -234,7 +241,7 @@
             { id: 'timeou',   kind: 'overUnder',      label: 'Winning time over/under',   line: '1:58.00', payoffMultiplier: 2 },
             { id: 'tri',      kind: 'orderedTriple',  label: 'Trifecta (1-2-3 in order)', payoffMultiplier: 12 },
             { id: 'exacta',   kind: 'orderedPair',    label: 'Exacta (1-2 in order)',     payoffMultiplier: 5 },
-            { id: 'box3',     kind: 'unorderedTriple',label: 'Top-3 Box (any order)',     payoffMultiplier: 7 },
+            { id: 'box3',     kind: 'unorderedTriple',label: 'Top-3 Box (any order)',     scoring: 'gradientOdds' },
             // Long shot: player picks one 15:1+ horse; payoff = decimal odds scaled by finish position.
             // 1st = full odds, 2nd = half odds, 3rd = 1/3 odds. Outside top 3 = $0.
             { id: 'longshot', kind: 'pickLongshot',   label: 'Long Shot (15:1+) — position-scaled odds', scoring: 'positionScaledOdds' }
@@ -478,10 +485,33 @@
             }
 
             case 'unorderedTriple': {
-                if (!Array.isArray(pickValue) || pickValue.length !== 3) return miss;
                 if (!Array.isArray(result) || result.length < 3) return miss;
-                const pickSet = new Set(pickValue.map(Number));
+                if (!Array.isArray(pickValue)) return miss;
                 const resultSet = new Set(result.slice(0, 3).map(Number));
+
+                // Gradient scoring: partial credit per pick that lands in actual top 3, odds-weighted.
+                // multiplier = hitCount + sum(decimal_odds_of_hits). Zero hits = miss.
+                if (question.scoring === 'gradientOdds') {
+                    const clean = pickValue.filter(v => v !== null && v !== undefined && v !== '');
+                    if (clean.length === 0) return miss;
+                    const uniquePicks = Array.from(new Set(clean.map(Number)));
+                    let hitCount = 0;
+                    let oddsSum = 0;
+                    uniquePicks.forEach(id => {
+                        if (resultSet.has(id)) {
+                            hitCount++;
+                            const c = contestantsById[id];
+                            oddsSum += parseOdds(c && c.odds).decimal;
+                        }
+                    });
+                    if (hitCount === 0) return miss;
+                    const mult = hitCount + oddsSum;
+                    return { hit: true, payoff: Math.round(stake * mult + stake) };
+                }
+
+                // Legacy binary: all 3 picks must finish top 3 (any order). Flat payoffMultiplier.
+                if (pickValue.length !== 3) return miss;
+                const pickSet = new Set(pickValue.map(Number));
                 if (pickSet.size !== 3 || resultSet.size !== 3) return miss;
                 for (const id of pickSet) if (!resultSet.has(id)) return miss;
                 return { hit: true, payoff: payoffForHit(question, stake, 0, poolConfig) };
@@ -957,6 +987,13 @@
                 } else {
                     total += payoffForHit(q, stake, 0, poolConfig);
                 }
+            } else if (q.kind === 'unorderedTriple' && q.scoring === 'gradientOdds' && Array.isArray(pick)) {
+                // Gradient max = all 3 picks land in top 3; mult = 3 + sum of decimal odds of all 3.
+                const ids = pick.filter(v => v != null && v !== '').map(Number);
+                const uniq = Array.from(new Set(ids));
+                const oddsSum = uniq.reduce((s, id) => s + parseOdds((contestantsById[id] || {}).odds).decimal, 0);
+                const mult = uniq.length + oddsSum;
+                total += Math.round(stake * mult + stake);
             } else if (q.kind === 'overUnder' || q.kind === 'yesNo') {
                 total += alloc ? payoffForHit(q, stake, 0, poolConfig) : stake;
             } else if (q.kind === 'autoProp') {

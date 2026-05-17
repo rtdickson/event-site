@@ -12,7 +12,19 @@ function eventDate(data) {
     return null;
 }
 
+function isFeaturedEvent(data) {
+    if (data.isFeatured !== undefined) return !!data.isFeatured;
+    return !!data.isActive; // legacy fallback for pre-migration events
+}
+
+function isHiddenLifecycle(data) {
+    const lc = data.lifecycle;
+    return lc === 'draft' || lc === 'archived';
+}
+
 function isUpcoming(data) {
+    if (isHiddenLifecycle(data)) return false;
+    if (!isFeaturedEvent(data)) return false;
     const d = eventDate(data);
     if (!d) return true; // if date can't be parsed, show it (don't accidentally hide)
     // Treat the entire event day as "still upcoming" so day-of guests see it
@@ -23,6 +35,7 @@ function isUpcoming(data) {
 const RECENT_RESULTS_DAYS = 4;
 
 function isRecentResult(data) {
+    if (isHiddenLifecycle(data)) return false;
     const d = eventDate(data);
     if (!d) return false;
     const endOfEventDay = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59);
@@ -62,6 +75,18 @@ function typeBadge(data) {
     return '<span class="event-type-badge gathering">Gathering</span>';
 }
 
+function lifecycleBadge(data, hasWinner) {
+    // Winner card already conveys "completed" via the trophy line; skip the badge.
+    if (hasWinner) return '';
+    const lc = data.lifecycle;
+    if (lc === 'accepting') return '<span class="event-card-active">★ Open</span>';
+    if (lc === 'locked') return '<span class="event-card-locked">Picks closed</span>';
+    if (lc === 'complete') return '<span class="event-card-complete">Completed</span>';
+    // Legacy events without lifecycle field — preserve old "active" star
+    if (!lc && (data.isFeatured || data.isActive)) return '<span class="event-card-active">★ Active</span>';
+    return '';
+}
+
 async function loadEventList() {
     try {
         const snapshot = await db.collection('events').orderBy('createdAt', 'desc').get();
@@ -79,10 +104,12 @@ async function loadEventList() {
             else if (isRecentResult(data)) recent.push({ id: doc.id, data });
         });
 
-        // Upcoming sort: active first, then by event date ascending
+        // Upcoming sort: 'accepting' lifecycle first, then by event date ascending
         upcoming.sort((a, b) => {
-            if (a.data.isActive && !b.data.isActive) return -1;
-            if (!a.data.isActive && b.data.isActive) return 1;
+            const aAcc = (a.data.lifecycle === 'accepting');
+            const bAcc = (b.data.lifecycle === 'accepting');
+            if (aAcc && !bAcc) return -1;
+            if (!aAcc && bAcc) return 1;
             const da = eventDate(a.data);
             const db_ = eventDate(b.data);
             if (da && db_) return da.getTime() - db_.getTime();
@@ -164,7 +191,7 @@ function renderEventCard(id, data, winner) {
                 <div class="event-card-body">
                     <div class="event-card-meta">
                         ${typeBadge(data)}
-                        ${data.isActive && !winner ? '<span class="event-card-active">★ Active</span>' : ''}
+                        ${lifecycleBadge(data, !!winner)}
                     </div>
                     <h3 class="event-card-title">${escapeHtml(data.name)}</h3>
                     <p class="event-card-date">${escapeHtml(data.date || '')}</p>

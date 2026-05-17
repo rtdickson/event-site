@@ -250,23 +250,38 @@
         }
     }
 
-    async function findPoolEvent() {
-        // Prefer active pool event; fall back to most recent pool event.
-        let snap = await db.collection('events')
-            .where('type', '==', 'pool')
-            .where('isActive', '==', true)
-            .limit(1)
-            .get();
-        if (!snap.empty) return snap.docs[0];
+    const POOL_SELECTION_KEY = 'poolAdmin.selectedEventId';
 
-        snap = await db.collection('events')
+    async function listPoolEvents() {
+        const snap = await db.collection('events')
             .where('type', '==', 'pool')
             .orderBy('createdAt', 'desc')
-            .limit(1)
             .get();
-        if (!snap.empty) return snap.docs[0];
+        return snap.docs;
+    }
 
-        return null;
+    async function findPoolEvent() {
+        // Selected pool (admin chose explicitly) wins, if it still exists.
+        const explicit = localStorage.getItem(POOL_SELECTION_KEY);
+        if (explicit) {
+            const explicitDoc = await db.collection('events').doc(explicit).get();
+            if (explicitDoc.exists && explicitDoc.data().type === 'pool') return explicitDoc;
+        }
+
+        // Otherwise: prefer accepting pool; then any featured pool; then most recent.
+        const pools = await listPoolEvents();
+        if (pools.length === 0) return null;
+
+        const accepting = pools.find(d => d.data().lifecycle === 'accepting');
+        if (accepting) return accepting;
+
+        const featured = pools.find(d => {
+            const data = d.data();
+            return (data.isFeatured !== undefined ? data.isFeatured : data.isActive);
+        });
+        if (featured) return featured;
+
+        return pools[0]; // most recent
     }
 
     // One-time migration of legacy questions to new schema (no hardcoded stake, payoffMultiplier).
@@ -716,9 +731,17 @@
             ? closesAt.toDate().toLocaleString()
             : 'not set';
         const muted = (currentPoolEvent.poolConfig.mutedPhones || []).length;
+        const isFeatured = currentPoolEvent.isFeatured !== undefined ? currentPoolEvent.isFeatured : currentPoolEvent.isActive;
+        const lifecycle = currentPoolEvent.lifecycle || 'accepting';
+        const code = currentPoolEvent.eventCode || '';
+
         header.innerHTML = `
-            <div><strong>${escapeHtml(currentPoolEvent.name)}</strong>
-                ${currentPoolEvent.isActive ? '<span class="pool-badge">ACTIVE</span>' : ''}
+            <div>
+                <strong>${escapeHtml(currentPoolEvent.name)}</strong>
+                ${code ? `<code class="pool-event-code">${escapeHtml(code)}</code>` : ''}
+                ${isFeatured ? '<span class="pool-badge">FEATURED</span>' : ''}
+                <span class="pool-lifecycle-badge pool-lifecycle-${lifecycle}">${lifecycle}</span>
+                <span id="pool-event-switcher-wrap"></span>
             </div>
             <div class="pool-admin-meta">
                 Closes: ${escapeHtml(closesText)}
@@ -726,6 +749,34 @@
                 ${muted > 0 ? `&middot; <span class="pool-muted-count">🔇 ${muted} muted</span>` : ''}
             </div>
         `;
+        renderPoolSwitcher();
+    }
+
+    async function renderPoolSwitcher() {
+        const wrap = document.getElementById('pool-event-switcher-wrap');
+        if (!wrap) return;
+        try {
+            const pools = await listPoolEvents();
+            if (pools.length <= 1) return; // only show when there's a choice to make
+            const opts = pools.map(d => {
+                const data = d.data();
+                const label = `${data.name}${data.eventCode ? ' [' + data.eventCode + ']' : ''}`;
+                const selected = d.id === currentPoolEventId ? 'selected' : '';
+                return `<option value="${d.id}" ${selected}>${escapeHtml(label)}</option>`;
+            }).join('');
+            wrap.innerHTML = `
+                <label style="margin-left:12px; font-size:13px; color:#555;">Switch pool:
+                    <select id="pool-event-switcher" style="margin-left:4px; padding:3px;">${opts}</select>
+                </label>
+            `;
+            const sel = document.getElementById('pool-event-switcher');
+            sel.addEventListener('change', () => {
+                localStorage.setItem(POOL_SELECTION_KEY, sel.value);
+                loadAndRender();
+            });
+        } catch (err) {
+            console.warn('Pool switcher render failed:', err);
+        }
     }
 
     // ----- Contestants -----

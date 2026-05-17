@@ -24,10 +24,18 @@ async function loadActiveEvent() {
             }
             eventDoc = docRef;
         } else {
-            console.log('Loading active event...');
-            const snapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
+            console.log('Loading featured event (no ?id= in URL)…');
+            // Prefer accepting events; fall back to any featured event.
+            let snapshot = await db.collection('events').where('lifecycle', '==', 'accepting').limit(1).get();
             if (snapshot.empty) {
-                console.log('No active event found');
+                snapshot = await db.collection('events').where('isFeatured', '==', true).limit(1).get();
+            }
+            if (snapshot.empty) {
+                // Legacy fallback for pre-migration data
+                snapshot = await db.collection('events').where('isActive', '==', true).limit(1).get();
+            }
+            if (snapshot.empty) {
+                console.log('No featured event found');
                 document.getElementById('event-loading').style.display = 'none';
                 document.getElementById('no-active-event').style.display = 'block';
                 return;
@@ -417,8 +425,9 @@ async function loadDietaryRestrictions() {
                     </div>`
                 ).join('');
                 
+                const featured = (eventData.isFeatured !== undefined ? eventData.isFeatured : eventData.isActive);
                 eventDiv.innerHTML = `
-                    <h4>${eventData.name} ${eventData.isActive ? '<span style="color: green;">(ACTIVE)</span>' : ''}</h4>
+                    <h4>${eventData.name} ${featured ? '<span style="color: green;">(FEATURED)</span>' : ''}</h4>
                     ${notesHTML}
                 `;
                 

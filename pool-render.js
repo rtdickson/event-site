@@ -550,6 +550,11 @@
                         const uniq = Array.from(new Set(ids));
                         const oddsSum = uniq.reduce((s, id) => s + window.PoolConfig.parseOdds((contestantsById[id] || {}).odds).decimal, 0);
                         potential = stakeNum * (uniq.length + oddsSum) + stakeNum;
+                    } else if (q.kind === 'unorderedTriple' && q.scoring === 'gradientOdds') {
+                        const ids = Array.isArray(pickValue) ? pickValue.filter(v => v != null).map(Number) : [];
+                        const uniq = Array.from(new Set(ids));
+                        const oddsSum = uniq.reduce((s, id) => s + window.PoolConfig.parseOdds((contestantsById[id] || {}).odds).decimal, 0);
+                        potential = stakeNum * (uniq.length + oddsSum) + stakeNum;
                     } else {
                         potential = stakeNum * (mult || 1) + stakeNum;
                     }

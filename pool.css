@@ -1095,6 +1095,48 @@
     border: 1px solid #c8e6c9;
 }
 
+.event-card-locked {
+    font-size: 11px;
+    color: #8d6e00;
+    background: #fff8e1;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #f0d99b;
+}
+
+.event-card-complete {
+    font-size: 11px;
+    color: #1565c0;
+    background: #e3f2fd;
+    padding: 2px 8px;
+    border-radius: 10px;
+    border: 1px solid #bbdefb;
+}
+
+.pool-event-code {
+    background: #eee;
+    color: #555;
+    font-size: 12px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-left: 6px;
+}
+
+.pool-lifecycle-badge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    margin-left: 6px;
+    color: #fff;
+    text-transform: lowercase;
+}
+.pool-lifecycle-draft     { background: #888; }
+.pool-lifecycle-accepting { background: #2e7d32; }
+.pool-lifecycle-locked    { background: #b8860b; }
+.pool-lifecycle-complete  { background: #1565c0; }
+.pool-lifecycle-archived  { background: #777; }
+
 .event-card-title {
     margin: 4px 0 4px;
     font-family: 'Playfair Display', serif;

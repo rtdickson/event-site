@@ -33,7 +33,7 @@
 
                 <section class="math-section">
                     <h3>1. The pool format</h3>
-                    <p>Every player gets a fixed bankroll (default $5,000) to allocate across 6 bets. Each bet must be <strong>between $250 and $2,000</strong> and the six must <strong>sum to exactly $5,000</strong>. Use the +/− buttons on the public page to adjust.</p>
+                    <p id="math-format-text">Every player gets a fixed bankroll (default $5,000) to allocate across 6 bets. Each bet must be <strong>between $250 and $2,000</strong> and the six must <strong>sum to exactly $5,000</strong>. Use the +/− buttons on the public page to adjust.</p>
                     <p>Highest final bankroll wins the pool. Ties are broken by the cascade in section 3.</p>
                 </section>
 
@@ -45,7 +45,7 @@
                             <tr><td>Top 5 Finishers</td><td>Pick 5 horses (any order). Payoff scales by how many landed in actual top 5, and rewards picking longshots.</td><td>stake × (# hit + sum of decimal odds of hit horses) + stake</td></tr>
                             <tr><td>Time Over/Under</td><td>Over or under the posted winning-time line (default 1:58.00)</td><td>stake × 2 + stake</td></tr>
                             <tr><td>Exacta</td><td>Pick the top 2 in exact order</td><td>stake × 5 + stake</td></tr>
-                            <tr><td>Top-3 Box (any order)</td><td>Pick 3 horses; bet hits if all 3 finish top 3 in any order. Harder than Exacta (3 horses vs 2), easier than Trifecta (no order required).</td><td>stake × 7 + stake</td></tr>
+                            <tr><td>Top-3 Box (gradient)</td><td>Pick 3 horses for the top 3 in any order. Partial credit per pick that lands in actual top 3, odds-weighted. Rewards picking longshots in the box.</td><td>stake × (# hit + sum of decimal odds of hits) + stake</td></tr>
                             <tr><td>Trifecta</td><td>Pick the top 3 in exact order. Hardest bet on the slip; pays the headline reward.</td><td>stake × 12 + stake</td></tr>
                             <tr><td>Long Shot (15:1+), position-scaled</td><td>Pick one horse listed at 15:1+ on the latest morning line. Payoff scales by where they finish. <em>If your picked horse's odds tighten below 15:1 before lock and you don't update, the bet voids ($0) — players get an SMS when this happens.</em></td><td>stake × odds × scale + stake (1st = full odds, 2nd = ½, 3rd = ⅓, outside top 3 OR no longer a longshot = $0)</td></tr>
                         </tbody>

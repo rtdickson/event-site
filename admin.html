@@ -21,6 +21,7 @@
     <!-- Application Scripts -->
     <script src="pool-config.js"></script>
     <script src="pool-audit.js"></script>
+    <script src="migration-phase1.js"></script>
     <script src="script-twilio.js"></script>
     <script src="script-admin.js"></script>
     <script src="pool-admin.js"></script>
@@ -174,9 +175,9 @@
                                     <label for="event-name">Event Name:</label>
                                     <input id="event-name" type="text" required />
 
-                                    <label for="event-code">Event Code:</label>
-                                    <input id="event-code" type="text" placeholder="e.g. pkns26" maxlength="12" pattern="[a-z0-9]{3,12}" />
-                                    <small style="color:#666; display:block; margin-bottom:10px;">3–12 lowercase letters/digits. Used for SMS routing (Phase 1) and deep links. e.g. <code>kd26</code>, <code>pkns26</code>, <code>bel26</code>, <code>nflw1</code>.</small>
+                                    <label for="event-code">Event Code: <span style="color:#b71c1c;">*</span></label>
+                                    <input id="event-code" type="text" placeholder="e.g. bel26" maxlength="12" pattern="[a-z0-9]{3,12}" required />
+                                    <small style="color:#666; display:block; margin-bottom:10px;">3–12 lowercase letters/digits. Required — used for SMS routing (<code>PICK BEL26 7</code>), deep links, and disambiguation when multiple events are live. e.g. <code>kd26</code>, <code>pkns26</code>, <code>bel26</code>, <code>nflw1</code>.</small>
 
                                     <label for="event-type" style="font-weight:600;">Event Type:</label>
                                     <select id="event-type" style="background:#fff8e1; border:2px solid #d4a843; font-weight:600; padding:8px;">
@@ -247,12 +248,32 @@
 
                                     <div class="event-active-checkbox">
                                         <label>
-                                            <input type="checkbox" id="event-active" />
-                                            Make this the active event (shown to guests)
+                                            <input type="checkbox" id="event-featured" />
+                                            <strong>Featured on home page</strong> — show this event in the public events list
+                                        </label>
+                                        <small style="color:#666; display:block; margin-top:4px;">Multiple events can be featured simultaneously. Each event still routes its own SMS based on event code + type.</small>
+                                    </div>
+
+                                    <div class="event-active-checkbox" style="margin-top:8px;">
+                                        <label>
+                                            <input type="checkbox" id="event-notify-admin" checked />
+                                            Text me when someone submits an entry/RSVP
                                         </label>
                                     </div>
 
-                                    <button type="submit">Save Event</button>
+                                    <div style="margin-top:10px; padding:10px; border:1px solid #d0d0d0; border-radius:6px; background:#fafafa;">
+                                        <label for="event-lifecycle" style="font-weight:600; margin-bottom:4px;">Lifecycle:</label>
+                                        <select id="event-lifecycle" style="padding:6px; min-width:200px;">
+                                            <option value="draft">Draft — hidden from public</option>
+                                            <option value="accepting" selected>Accepting — picks/RSVPs open</option>
+                                            <option value="locked">Locked — closed, awaiting results</option>
+                                            <option value="complete">Complete — results final</option>
+                                            <option value="archived">Archived — hidden, direct URL only</option>
+                                        </select>
+                                        <small style="color:#666; display:block; margin-top:4px;">Auto-transitions: <em>accepting → locked</em> when picks close, <em>locked → complete</em> when results are saved. You can also flip manually here.</small>
+                                    </div>
+
+                                    <button type="submit" style="margin-top:14px;">Save Event</button>
                                     <button type="button" onclick="clearEventForm()">Clear Form</button>
                                     <p id="event-message"></p>
                                 </form>

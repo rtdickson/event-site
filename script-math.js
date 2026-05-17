@@ -169,7 +169,38 @@ function renderLegacyGroup(group, config, contestants) {
     return out;
 }
 
+async function loadFormatText() {
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('event');
+    if (!eventId) return;
+
+    const el = document.getElementById('math-format-text');
+    if (!el) return;
+
+    try {
+        const eventDoc = await db.collection('events').doc(eventId).get();
+        if (!eventDoc.exists) return;
+        const eventData = eventDoc.data();
+        const config = eventData.poolConfig;
+        if (!config || !window.PoolConfig || !window.PoolConfig.isAllocationMode(config)) return;
+
+        const bankroll = config.bankrollAmount || 5000;
+        const constraints = config.allocationConstraints || {};
+        const min = constraints.min || 250;
+        const max = constraints.max || 2000;
+        const numBets = (config.questions || []).length || 6;
+        const fmt = (n) => '$' + Number(n).toLocaleString();
+        const betWord = numBets === 1 ? 'bet' : 'bets';
+        const countWord = numBets === 1 ? 'one' : numBets === 2 ? 'two' : numBets === 3 ? 'three' : numBets === 4 ? 'four' : numBets === 5 ? 'five' : numBets === 6 ? 'six' : String(numBets);
+
+        el.innerHTML = `Every player gets a bankroll of <strong>${fmt(bankroll)}</strong> to allocate across <strong>${numBets} ${betWord}</strong>. Each bet must be <strong>between ${fmt(min)} and ${fmt(max)}</strong> and the ${countWord} must <strong>sum to exactly ${fmt(bankroll)}</strong>. Use the +/− buttons on the public page to adjust.`;
+    } catch (err) {
+        console.error('Format text load error:', err);
+    }
+}
+
 function initializePage() {
+    loadFormatText();
     loadWorkedExample();
 }
 
