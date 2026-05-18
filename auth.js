@@ -219,18 +219,28 @@ function logout() {
     window.location.href = 'index.html';
 }
 
-// Add logout buttons to authenticated pages
+// Add logout link to authenticated pages.
+// Prefers a #header-actions container if the page provides one (admin); otherwise
+// pins to the top-right of the page header as a subtle text link.
 document.addEventListener('DOMContentLoaded', () => {
-    // Add logout button to authenticated pages
-    if (window.auth.isAuthenticated()) {
-        const header = document.querySelector('header') || document.querySelector('main');
-        if (header) {
-            const logoutBtn = document.createElement('button');
-            logoutBtn.textContent = 'Logout';
-            logoutBtn.onclick = logout;
-            logoutBtn.style.cssText = 'position: absolute; top: 10px; right: 10px; padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer;';
-            header.style.position = 'relative';
-            header.appendChild(logoutBtn);
-        }
+    if (!window.auth.isAuthenticated()) return;
+
+    const logoutLink = document.createElement('a');
+    logoutLink.href = '#';
+    logoutLink.textContent = 'Logout';
+    logoutLink.className = 'site-logout-link';
+    logoutLink.addEventListener('click', (e) => { e.preventDefault(); logout(); });
+
+    const slot = document.getElementById('header-actions');
+    if (slot) {
+        slot.appendChild(logoutLink);
+        return;
     }
+
+    // Fallback: pin to top-right of the page header
+    const header = document.querySelector('header') || document.querySelector('main');
+    if (!header) return;
+    logoutLink.classList.add('site-logout-link-floating');
+    header.style.position = 'relative';
+    header.appendChild(logoutLink);
 });

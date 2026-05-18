@@ -796,3 +796,23 @@ footer {
 }
 
 /* Remove mobile styles since we're keeping it simple */
+/* Logout link (added by auth.js on authenticated pages) */
+.site-logout-link {
+    font-size: 13px;
+    color: #888;
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+}
+.site-logout-link:hover {
+    color: #b71c1c;
+    border-color: #f0c6c6;
+    background: #fef5f5;
+}
+.site-logout-link-floating {
+    position: absolute;
+    top: 10px;
+    right: 14px;
+}
