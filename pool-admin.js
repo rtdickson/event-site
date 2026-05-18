@@ -1213,7 +1213,27 @@
             ? '<p class="pool-admin-help">In allocation mode, position-based results (Top 5, Trifecta, Exacta, Long Shot) are derived from the full finish order entered below — only enter props/over-under here.</p>'
             : '';
 
-        form.innerHTML = allocHelp + inputs + `
+        // Tiebreaker results inputs (e.g., winning jockey age)
+        const tbQs = (currentPoolEvent.poolConfig.tiebreakerQuestions || []);
+        const tbResults = (currentPoolEvent.poolConfig.tiebreakerResults || {});
+        const tbHtml = tbQs.length > 0 ? `
+            <div style="margin-top:14px; padding-top:10px; border-top:1px dashed #ddd;">
+                <p class="pool-admin-help" style="margin:0 0 6px;">Tiebreakers (used only if multiple players tie on bankroll):</p>
+                ${tbQs.map(tq => {
+                    const v = tbResults[tq.key];
+                    const valAttr = (v !== undefined && v !== null && v !== '') ? `value="${v}"` : '';
+                    const minAttr = (tq.min !== undefined) ? `min="${tq.min}"` : '';
+                    const maxAttr = (tq.max !== undefined) ? `max="${tq.max}"` : '';
+                    return `
+                        <div class="pool-result-row">
+                            <label>${escapeHtml(tq.label)}</label>
+                            <input type="number" data-tiebreaker-key="${escapeHtml(tq.key)}" ${minAttr} ${maxAttr} ${valAttr} style="max-width:140px;" />
+                        </div>`;
+                }).join('')}
+            </div>
+        ` : '';
+
+        form.innerHTML = allocHelp + inputs + tbHtml + `
             <div style="margin-top:12px;">
                 <button type="submit" class="pool-primary-btn">Save Results &amp; Compute Standings</button>
                 <button type="button" id="pool-clear-results" class="pool-secondary-btn" style="margin-left:8px;">Clear Results</button>
@@ -1338,7 +1358,20 @@
                     return;
                 }
 
-                await savePoolConfig({ results: newResults });
+                // Tiebreaker results
+                const newTbResults = {};
+                form.querySelectorAll('[data-tiebreaker-key]').forEach(el => {
+                    const key = el.getAttribute('data-tiebreaker-key');
+                    const raw = el.value;
+                    if (raw === '' || raw === null) {
+                        newTbResults[key] = null;
+                    } else {
+                        const n = Number(raw);
+                        newTbResults[key] = isFinite(n) ? n : raw;
+                    }
+                });
+
+                await savePoolConfig({ results: newResults, tiebreakerResults: newTbResults });
                 renderStandings();
                 alert('Results saved. Standings updated.');
             });
@@ -1366,19 +1399,26 @@
                 const score = PC.scoreSlip(currentPoolEvent.poolConfig, entry, contestants);
                 const tieBreak = PC.triCloseness(entry, currentPoolEvent.poolConfig);
                 const winStake = isAlloc ? PC.totalWinningStake(entry, currentPoolEvent.poolConfig, contestants) : 0;
-                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak, winStake };
+                const tbCloseness = PC.tiebreakerCloseness ? PC.tiebreakerCloseness(entry, currentPoolEvent.poolConfig) : null;
+                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak, winStake, tbCloseness };
             }).sort((a, b) => {
                 if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
                 if (isAlloc) {
-                    // Allocation cascade: winning stake → trifecta position error → alphabetical
+                    // Allocation cascade: winning stake → trifecta position error → tiebreaker closeness → alphabetical
                     if (b.winStake !== a.winStake) return b.winStake - a.winStake;
                     if (a.tieBreak && b.tieBreak && a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
+                    if (a.tbCloseness !== null && b.tbCloseness !== null && a.tbCloseness !== b.tbCloseness) {
+                        return a.tbCloseness - b.tbCloseness; // lower = closer = wins
+                    }
                     return a.name.localeCompare(b.name);
                 }
-                // Fixed-stake tiebreaker: trifecta-closeness ladder
+                // Fixed-stake tiebreaker: trifecta-closeness ladder, then numeric tiebreaker
                 if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
                 if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
                 if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;
+                if (a.tbCloseness !== null && b.tbCloseness !== null && a.tbCloseness !== b.tbCloseness) {
+                    return a.tbCloseness - b.tbCloseness;
+                }
                 return 0;
             });
 
@@ -1387,24 +1427,37 @@
                 return;
             }
 
+            const tbQs = currentPoolEvent.poolConfig.tiebreakerQuestions || [];
+            const tbResults = currentPoolEvent.poolConfig.tiebreakerResults || {};
+            const tbHasResults = tbQs.some(q => tbResults[q.key] !== null && tbResults[q.key] !== undefined && tbResults[q.key] !== '');
+            const tbColHeader = tbQs.length > 0 ? `<th>${tbQs.length === 1 ? escapeHtml(tbQs[0].label.split('(')[0].trim()) : 'TB closeness'}</th>` : '';
+            const tbColCell = (r) => {
+                if (tbQs.length === 0) return '';
+                if (!tbHasResults || r.tbCloseness === null || r.tbCloseness === Infinity) return '<td>—</td>';
+                return `<td>${r.tbCloseness}</td>`;
+            };
+
             let tieHelp, tieHeader, tieCell;
             if (isAlloc) {
-                tieHelp = 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → split pot / coin flip.';
-                tieHeader = '<th>Winning stake</th><th>Tri err</th>';
-                tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td><td>${(r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : '—'}</td>`;
+                tieHelp = tbQs.length > 0
+                    ? 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → tiebreaker closeness → split pot / coin flip.'
+                    : 'Allocation cascade: bankroll → total $ on winning bets → trifecta position error → split pot / coin flip.';
+                tieHeader = '<th>Winning stake</th><th>Tri err</th>' + tbColHeader;
+                tieCell = (r) => `<td>$${(r.winStake || 0).toLocaleString()}</td><td>${(r.tieBreak && typeof r.tieBreak.tier1 === 'number') ? r.tieBreak.tier1 : '—'}</td>` + tbColCell(r);
             } else {
                 const useFull = ranked.length > 0 && ranked[0].tieBreak.usedFullFinish;
                 tieHelp = useFull
                     ? 'Cascade: bankroll → tri positional error (lower) → exact hits (higher) → exacta error (lower) → coin flip.'
                     : 'Cascade: bankroll → set match → exact match → coin flip. Add full finish order below for granular tiebreaker.';
-                tieHeader = useFull
+                tieHeader = (useFull
                     ? '<th>Tri err</th><th>Exact</th><th>Exacta err</th>'
-                    : '<th>Tri match</th>';
+                    : '<th>Tri match</th>') + tbColHeader;
                 tieCell = (r) => {
                     const t = r.tieBreak;
-                    return useFull
+                    const base = useFull
                         ? `<td>${t.tier1}</td><td>${t.tier2}/3</td><td>${t.tier3}</td>`
                         : `<td>${t.setMatch}/3 set, ${t.exactMatch}/3 exact</td>`;
+                    return base + tbColCell(r);
                 };
             }
             container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4>'

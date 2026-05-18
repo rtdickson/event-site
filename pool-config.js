@@ -234,6 +234,50 @@
         return BET_CATALOG.filter(b => b.modes.includes(mode));
     }
 
+    // Tiebreaker questions are NOT bets — they don't take stake or pay out.
+    // They produce a per-entry closeness score that breaks ties further down the cascade.
+    // Stored on poolConfig.tiebreakerQuestions; results on poolConfig.tiebreakerResults;
+    // player guesses on entry.tiebreakers (all keyed by `key`).
+    //
+    // Generic by design — horse racing defaults to jockey age, but the same shape
+    // works for NFL ("Sunday Night total points") or anything else where closest wins.
+    function defaultTiebreakerQuestions() {
+        return [
+            {
+                key: 'jockeyAge',
+                label: "Winning jockey's age (years)",
+                kind: 'number',
+                min: 16,
+                max: 80,
+                placeholder: 'e.g. 32',
+                help: 'Closest guess breaks ties before falling to a coin flip.'
+            }
+        ];
+    }
+
+    // Returns the entry's combined tiebreaker closeness (sum of |guess - actual|
+    // across all tiebreaker questions where both values are set). Lower wins.
+    // Returns Infinity if the entry has no usable guess data — pushes them to the
+    // bottom of tied groups so they fall to coin flip rather than win on a fluke.
+    function tiebreakerCloseness(entry, poolConfig) {
+        const questions = (poolConfig && poolConfig.tiebreakerQuestions) || [];
+        const results = (poolConfig && poolConfig.tiebreakerResults) || {};
+        const guesses = (entry && entry.tiebreakers) || {};
+        if (questions.length === 0) return null; // no tiebreakers defined
+        let total = 0;
+        let hasAnyData = false;
+        for (const q of questions) {
+            const result = results[q.key];
+            const guess = guesses[q.key];
+            const r = Number(result);
+            const g = Number(guess);
+            if (!isFinite(r) || !isFinite(g)) continue;
+            total += Math.abs(g - r);
+            hasAnyData = true;
+        }
+        return hasAnyData ? total : Infinity;
+    }
+
     function defaultPreaknessQuestions() {
         return [
             // Top 5: gradient scoring — pick 5 horses; multiplier = (# in actual top 5) + (sum of their odds)
@@ -1049,6 +1093,8 @@
         parseOdds,
         defaultDerbyQuestions,
         defaultPreaknessQuestions,
+        defaultTiebreakerQuestions,
+        tiebreakerCloseness,
         BET_CATALOG,
         availableBetTypes,
         isAllocationMode,

@@ -1554,6 +1554,11 @@ if (eventForm) {
                     : (window.PoolConfig ? window.PoolConfig.defaultDerbyQuestions() : []);
             }
 
+            // Seed tiebreaker questions on fresh pools (preserved across edits)
+            const tiebreakerQuestions = (existingPoolConfig.tiebreakerQuestions && existingPoolConfig.tiebreakerQuestions.length > 0)
+                ? existingPoolConfig.tiebreakerQuestions
+                : (window.PoolConfig ? window.PoolConfig.defaultTiebreakerQuestions() : []);
+
             const poolConfig = Object.assign({}, existingPoolConfig, {
                 closesAtRaw: closesAtRaw || dateRaw,
                 closesAt: closesAtRaw
@@ -1563,7 +1568,9 @@ if (eventForm) {
                 defaultStake: stake,
                 contestants: existingPoolConfig.contestants || [],
                 questions: questions,
-                results: existingPoolConfig.results || null
+                tiebreakerQuestions: tiebreakerQuestions,
+                results: existingPoolConfig.results || null,
+                tiebreakerResults: existingPoolConfig.tiebreakerResults || null
             });
 
             if (bankrollMode === 'allocate') {

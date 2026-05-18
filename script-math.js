@@ -35,12 +35,18 @@ async function loadWorkedExample() {
             const data = doc.data();
             const score = window.PoolConfig.scoreSlip(config, data, contestants);
             const tieBreak = window.PoolConfig.triCloseness(data, config);
-            return { name: data.name || 'Unknown', picks: data.picks || {}, score, tieBreak };
+            const tbCloseness = window.PoolConfig.tiebreakerCloseness
+                ? window.PoolConfig.tiebreakerCloseness(data, config)
+                : null;
+            return { name: data.name || 'Unknown', picks: data.picks || {}, tiebreakers: data.tiebreakers || {}, score, tieBreak, tbCloseness };
         }).sort((a, b) => {
             if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
             if (a.tieBreak.tier1 !== b.tieBreak.tier1) return a.tieBreak.tier1 - b.tieBreak.tier1;
             if (b.tieBreak.tier2 !== a.tieBreak.tier2) return b.tieBreak.tier2 - a.tieBreak.tier2;
             if (a.tieBreak.tier3 !== b.tieBreak.tier3) return a.tieBreak.tier3 - b.tieBreak.tier3;
+            if (a.tbCloseness !== null && b.tbCloseness !== null && a.tbCloseness !== b.tbCloseness) {
+                return a.tbCloseness - b.tbCloseness;
+            }
             return 0;
         });
 
@@ -85,7 +91,7 @@ async function loadWorkedExample() {
                 html += `<h4>${isWinningGroup ? '🏆 ' : ''}${group.length}-way tie at $${Number(bankroll).toLocaleString()}</h4>`;
 
                 if (useFull) {
-                    html += renderFullFinishGroup(group, fullFinish, contestants);
+                    html += renderFullFinishGroup(group, fullFinish, contestants, config);
                 } else {
                     html += renderLegacyGroup(group, config, contestants);
                 }
@@ -100,7 +106,7 @@ async function loadWorkedExample() {
     }
 }
 
-function renderFullFinishGroup(group, fullFinish, contestants) {
+function renderFullFinishGroup(group, fullFinish, contestants, config) {
     const posByHorse = {};
     fullFinish.forEach((id, idx) => { posByHorse[Number(id)] = idx + 1; });
     const horseLabel = (id) => {
@@ -108,7 +114,21 @@ function renderFullFinishGroup(group, fullFinish, contestants) {
         return c ? `#${c.id} ${c.name}` : `#${id}`;
     };
 
-    let out = '<table class="math-tied-table"><thead><tr><th>Player</th><th>Tri pick</th><th>Slot 1 err</th><th>Slot 2 err</th><th>Slot 3 err</th><th>Tier 1 (sum)</th><th>Tier 2 (exact)</th><th>Tier 3 (exacta)</th></tr></thead><tbody>';
+    // Tiebreaker columns (numeric closeness, e.g., jockey age)
+    const tbQs = (config && config.tiebreakerQuestions) || [];
+    const tbResults = (config && config.tiebreakerResults) || {};
+    const tbHasResults = tbQs.some(q => tbResults[q.key] !== null && tbResults[q.key] !== undefined && tbResults[q.key] !== '');
+    const tbHeader = tbQs.length > 0 ? `<th>${escapeHtml(tbQs[0].label.split('(')[0].trim())}</th>` : '';
+    const tbCellFor = (r) => {
+        if (tbQs.length === 0) return '';
+        const guess = (r.tiebreakers || {})[tbQs[0].key];
+        if (guess === undefined || guess === null || guess === '') return '<td>—</td>';
+        if (!tbHasResults) return `<td>${escapeHtml(String(guess))}</td>`;
+        const closeness = (r.tbCloseness === null || r.tbCloseness === Infinity) ? '—' : `off by ${r.tbCloseness}`;
+        return `<td>${escapeHtml(String(guess))} <small>(${closeness})</small></td>`;
+    };
+
+    let out = `<table class="math-tied-table"><thead><tr><th>Player</th><th>Tri pick</th><th>Slot 1 err</th><th>Slot 2 err</th><th>Slot 3 err</th><th>Tier 1 (sum)</th><th>Tier 2 (exact)</th><th>Tier 3 (exacta)</th>${tbHeader}</tr></thead><tbody>`;
     group.forEach((r, idx) => {
         const tri = r.picks.tri || [];
         const errors = tri.map((id, slotIdx) => {
@@ -133,6 +153,7 @@ function renderFullFinishGroup(group, fullFinish, contestants) {
             <td><strong>${tier1}</strong></td>
             <td>${tier2}/3</td>
             <td>${tier3}</td>
+            ${tbCellFor(r)}
         </tr>`;
     });
     out += '</tbody></table>';
@@ -140,11 +161,15 @@ function renderFullFinishGroup(group, fullFinish, contestants) {
     // Resolution narrative
     const w = group[0].tieBreak;
     const r2 = group[1].tieBreak;
+    const wTb = group[0].tbCloseness;
+    const r2Tb = group[1].tbCloseness;
     let resolved = '';
     if (w.tier1 !== r2.tier1) resolved = `Resolved on <strong>Tier 1</strong>: ${escapeHtml(group[0].name)} has tri error ${w.tier1}, lower than next-best ${r2.tier1}.`;
     else if (w.tier2 !== r2.tier2) resolved = `Tier 1 tied at ${w.tier1}. Resolved on <strong>Tier 2</strong>: ${escapeHtml(group[0].name)} got ${w.tier2}/3 exact vs ${r2.tier2}/3.`;
     else if (w.tier3 !== r2.tier3) resolved = `Tiers 1 & 2 tied. Resolved on <strong>Tier 3</strong> (exacta): ${escapeHtml(group[0].name)} has exacta error ${w.tier3}, lower than ${r2.tier3}.`;
-    else resolved = `<strong style="color:#b71c1c;">Coin flip required</strong> — all three tiers tied.`;
+    else if (tbQs.length > 0 && wTb !== null && r2Tb !== null && wTb !== r2Tb)
+        resolved = `Trifecta tiers all tied. Resolved on <strong>numeric tiebreaker</strong> (${escapeHtml(tbQs[0].label.split('(')[0].trim())}): ${escapeHtml(group[0].name)} off by ${wTb}, next-best ${r2Tb}.`;
+    else resolved = `<strong style="color:#b71c1c;">Coin flip required</strong> — all tiers tied.`;
     out += `<p class="math-resolution">${resolved}</p>`;
     return out;
 }

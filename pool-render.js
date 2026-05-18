@@ -589,6 +589,28 @@
             }
         }
 
+        // Tiebreaker rows (allocation pools) — show guess and closeness if results in
+        let tiebreakerLines = '';
+        const tbQs = (config.tiebreakerQuestions || []);
+        const tbResults = config.tiebreakerResults || {};
+        const tbGuesses = (data.tiebreakers || {});
+        if (isAlloc && tbQs.length > 0) {
+            tiebreakerLines = tbQs.map(tq => {
+                const g = tbGuesses[tq.key];
+                const r = tbResults[tq.key];
+                const hasGuess = g !== undefined && g !== null && g !== '';
+                const hasResult = r !== undefined && r !== null && r !== '';
+                const diff = (hasGuess && hasResult) ? Math.abs(Number(g) - Number(r)) : null;
+                const right = !hasGuess ? '<span class="pool-detail-payoff miss">—</span>'
+                    : hasResult ? `<span>guess <strong>${escapeHtml(String(g))}</strong> · actual <strong>${escapeHtml(String(r))}</strong> · off by ${diff}</span>`
+                    : `<span>guess <strong>${escapeHtml(String(g))}</strong></span>`;
+                return `<li class="pool-detail-tiebreaker">
+                    <span class="pool-detail-label">Tiebreaker — ${escapeHtml(tq.label)}</span>
+                    <span class="pool-detail-value">${right}</span>
+                </li>`;
+            }).join('');
+        }
+
         // Allocation pool footer: total stake + bankroll total
         let footerLine = '';
         if (isAlloc) {
@@ -603,7 +625,7 @@
             }
         }
 
-        return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}${footerLine}</ul>`;
+        return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}${tiebreakerLines}${footerLine}</ul>`;
     }
 
     function formatPickValue(q, rawV, contestantsById) {
@@ -746,7 +768,8 @@
                     name: found.data.name || contactName || '',
                     phone: found.data.phone || phoneRaw,
                     picks: found.data.picks || {},
-                    locks: Array.isArray(found.data.locks) ? found.data.locks.slice() : []
+                    locks: Array.isArray(found.data.locks) ? found.data.locks.slice() : [],
+                    tiebreakers: (found.data.tiebreakers && typeof found.data.tiebreakers === 'object') ? Object.assign({}, found.data.tiebreakers) : {}
                 };
                 if (contactName) currentEntry.name = contactName; // prefer contact name
                 if (window.PoolConfig.isAllocationMode(activeEvent.poolConfig)) {
@@ -811,9 +834,11 @@
         `;
 
         const cards = questions.map(q => renderAllocCard(q, contestants, constraints)).join('');
-        container.innerHTML = headerHtml + `<div class="pool-alloc-cards">${cards}</div>`;
+        const tiebreakerHtml = renderTiebreakerSection(config);
+        container.innerHTML = headerHtml + `<div class="pool-alloc-cards">${cards}</div>` + tiebreakerHtml;
 
         wireAllocCards(constraints, bankroll);
+        wireTiebreakerInputs(config);
 
         // Update submit button text for allocation mode
         const submitBtn = document.getElementById('pool-submit');
@@ -829,6 +854,60 @@
         phoneInput.addEventListener('blur', onPhoneEntered);
 
         updateAllocSummary(constraints, bankroll);
+    }
+
+    function renderTiebreakerSection(config) {
+        const qs = (config && config.tiebreakerQuestions) || [];
+        if (qs.length === 0) return '';
+        if (!currentEntry.tiebreakers) currentEntry.tiebreakers = {};
+
+        const rows = qs.map(q => {
+            const cur = currentEntry.tiebreakers[q.key];
+            const valAttr = (cur !== undefined && cur !== null && cur !== '') ? `value="${escapeHtml(String(cur))}"` : '';
+            const minAttr = (q.min !== undefined) ? `min="${q.min}"` : '';
+            const maxAttr = (q.max !== undefined) ? `max="${q.max}"` : '';
+            const ph = q.placeholder ? `placeholder="${escapeHtml(q.placeholder)}"` : '';
+            return `
+                <div class="pool-tiebreaker-row">
+                    <label class="pool-tiebreaker-label" for="pool-tb-${escapeHtml(q.key)}">${escapeHtml(q.label)}</label>
+                    <input type="number" inputmode="numeric"
+                        id="pool-tb-${escapeHtml(q.key)}"
+                        data-tb-key="${escapeHtml(q.key)}"
+                        ${minAttr} ${maxAttr} ${ph} ${valAttr}
+                        class="pool-tiebreaker-input" required />
+                    ${q.help ? `<small class="pool-tiebreaker-help">${escapeHtml(q.help)}</small>` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="pool-tiebreaker-section">
+                <h4 class="pool-tiebreaker-title">Tiebreaker</h4>
+                <p class="pool-tiebreaker-intro">Used if multiple players tie on bankroll. No stake, no payoff — closest guess wins the tie.</p>
+                ${rows}
+            </div>
+        `;
+    }
+
+    function wireTiebreakerInputs(config) {
+        const qs = (config && config.tiebreakerQuestions) || [];
+        if (qs.length === 0) return;
+        if (!currentEntry.tiebreakers) currentEntry.tiebreakers = {};
+        qs.forEach(q => {
+            const el = document.getElementById('pool-tb-' + q.key);
+            if (!el) return;
+            const handler = () => {
+                const raw = el.value;
+                if (raw === '' || raw === null) {
+                    delete currentEntry.tiebreakers[q.key];
+                } else {
+                    const n = Number(raw);
+                    currentEntry.tiebreakers[q.key] = isFinite(n) ? n : raw;
+                }
+            };
+            el.addEventListener('input', handler);
+            el.addEventListener('change', handler);
+        });
     }
 
     function getInitialPickValue(q) {
@@ -1294,7 +1373,7 @@
     }
 
     function resetCurrentEntry() {
-        currentEntry = { name: '', phone: '', picks: {}, locks: [] };
+        currentEntry = { name: '', phone: '', picks: {}, locks: [], tiebreakers: {} };
         existingEntryId = null;
     }
 
@@ -1328,6 +1407,17 @@
                 flashMessage('Pick a horse for every bet before locking in.', 'red');
                 return;
             }
+
+            // Tiebreaker fields are required (every player must guess so the cascade works)
+            const tbQs = activeEvent.poolConfig.tiebreakerQuestions || [];
+            const tbs = currentEntry.tiebreakers || {};
+            for (const tq of tbQs) {
+                const v = tbs[tq.key];
+                if (v === null || v === undefined || v === '' || !isFinite(Number(v))) {
+                    flashMessage(`Enter a number for "${tq.label}" (tiebreaker).`, 'red');
+                    return;
+                }
+            }
         }
 
         // Capture state before save for notification
@@ -1351,6 +1441,7 @@
                 phone: currentEntry.phone,
                 picks: currentEntry.picks,
                 locks: currentEntry.locks,
+                tiebreakers: currentEntry.tiebreakers || {},
                 timestamp: firebase.firestore.FieldValue.serverTimestamp()
             };
 
