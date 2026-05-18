@@ -5,7 +5,13 @@ class SecureAuth {
     constructor() {
         this.TOKEN_KEY = 'auth_token';
         this.ROLE_KEY = 'user_role';
-        this.SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+        // Per-role session length. Both roles persist across browser closes/refreshes;
+        // admin auto-logout on unload was removed for usability (single-admin site).
+        this.SESSION_DURATION_BY_ROLE = {
+            guest: 30 * 24 * 60 * 60 * 1000, // 30 days — "verify once on your phone"
+            admin: 30 * 24 * 60 * 60 * 1000  // 30 days — same; admin self-manages devices
+        };
+        this.DEFAULT_SESSION_DURATION = this.SESSION_DURATION_BY_ROLE.guest;
     }
 
     // Hash function for client-side password verification
@@ -33,13 +39,14 @@ class SecureAuth {
 
     // Create session token
     createSessionToken(role) {
+        const ttl = this.SESSION_DURATION_BY_ROLE[role] || this.DEFAULT_SESSION_DURATION;
         const sessionData = {
             role: role,
             timestamp: Date.now(),
-            expires: Date.now() + this.SESSION_DURATION,
+            expires: Date.now() + ttl,
             sessionId: crypto.randomUUID()
         };
-        
+
         // In production, this would be a JWT or similar secure token
         return btoa(JSON.stringify(sessionData));
     }
@@ -120,17 +127,11 @@ class SecureAuth {
         return true;
     }
 
-    // Initialize authentication for a page
+    // Initialize authentication for a page.
+    // Admin auto-logout-on-unload was removed (2026-05-17) — single-admin site,
+    // the constant retyping was a tax with no real security benefit. 30-day TTL
+    // applies and the logout button is always available in the header.
     initAuth(requiredRole = 'guest') {
-        // Auto-logout on page close/refresh for security
-        window.addEventListener('beforeunload', () => {
-            if (requiredRole === 'admin') {
-                // Auto-logout admin sessions for security
-                this.logout();
-            }
-        });
-
-        // Check authentication
         return this.requireAuth(requiredRole);
     }
 }

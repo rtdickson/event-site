@@ -31,12 +31,26 @@
 <body>
     <!-- Admin Password Prompt -->
     <div id="admin-password-prompt">
-        <form id="admin-password-form">
+        <form id="admin-password-form" action="javascript:void(0);" autocomplete="on">
+            <!-- Hidden username gives Chrome's password manager a stable identity to key off,
+                 so the admin credential is saved separately from the guest credential. -->
+            <input
+                type="text"
+                name="username"
+                autocomplete="username"
+                value="admin"
+                tabindex="-1"
+                aria-hidden="true"
+                style="position:absolute; left:-9999px; width:1px; height:1px;"
+                readonly
+            />
             <input
                 id="admin-password-input"
+                name="admin-password"
                 placeholder="Enter admin password"
                 required
                 type="password"
+                autocomplete="current-password"
             />
             <button type="submit">Submit</button>
             <p id="admin-password-error"></p>

@@ -11,10 +11,13 @@
 <body>
     <div id="password-prompt" style="display: none;">
         <h2>Enter Password</h2>
-        <input type="password" id="password-input" placeholder="Password">
-        <br>
-        <button type="button">Submit</button>
-        <p id="password-error" style="color: red;"></p>
+        <form id="guest-password-form" action="javascript:void(0);" autocomplete="on">
+            <input type="text" name="username" autocomplete="username" value="guest" tabindex="-1" aria-hidden="true" style="position:absolute; left:-9999px; width:1px; height:1px;" readonly>
+            <input type="password" id="password-input" name="guest-password" autocomplete="current-password" placeholder="Password">
+            <br>
+            <button type="submit">Submit</button>
+            <p id="password-error" style="color: red;"></p>
+        </form>
     </div>
     <div id="main-content" style="display: none;">
         <header>
