@@ -253,11 +253,12 @@
     const POOL_SELECTION_KEY = 'poolAdmin.selectedEventId';
 
     async function listPoolEvents() {
+        // Filter client-side instead of using a composite (type, createdAt) index —
+        // the events collection is small and this avoids requiring a Firestore index.
         const snap = await db.collection('events')
-            .where('type', '==', 'pool')
             .orderBy('createdAt', 'desc')
             .get();
-        return snap.docs;
+        return snap.docs.filter(d => d.data().type === 'pool');
     }
 
     async function findPoolEvent() {
