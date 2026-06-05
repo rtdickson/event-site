@@ -961,6 +961,19 @@
                         <button type="button" class="pool-alloc-toggle-btn ${v === 'under' ? 'active' : ''}" data-pick-key="${q.id}" data-value="under">Under</button>
                     </div>`;
                 break;
+            case 'yesNo': {
+                // Plain yes/no prop. The player is NOT picking a horse — for "favorite finishes
+                // top 3?" style bets the favorite is fixed by the field odds, so we surface it as
+                // context and only ask Yes/No.
+                const favNote = q.id === 'fav' ? favoriteNote(contestants) : '';
+                pickUI = `<label class="pool-alloc-pick-label">Yes or No</label>
+                    ${favNote ? `<div class="pool-alloc-prop-desc">${favNote}</div>` : ''}
+                    <div class="pool-alloc-toggle">
+                        <button type="button" class="pool-alloc-toggle-btn ${v === 'yes' ? 'active' : ''}" data-pick-key="${q.id}" data-value="yes">Yes</button>
+                        <button type="button" class="pool-alloc-toggle-btn ${v === 'no' ? 'active' : ''}" data-pick-key="${q.id}" data-value="no">No</button>
+                    </div>`;
+                break;
+            }
             case 'orderedPair':
                 pickUI = `<label class="pool-alloc-pick-label">Pick 1st &amp; 2nd</label>
                     <div class="pool-alloc-triple">
@@ -1212,7 +1225,8 @@
                 status.textContent = `Need at least $${constraints.min}`;
             } else if (!hasPick) {
                 card.classList.add('pool-alloc-card-needpick');
-                status.textContent = 'Pick a horse before locking in';
+                const needsChoice = q.kind === 'yesNo' || q.kind === 'overUnder';
+                status.textContent = needsChoice ? 'Choose an option before locking in' : 'Pick a horse before locking in';
             } else if (stake >= constraints.max) {
                 card.classList.add('pool-alloc-card-max');
                 status.textContent = `Maxed at $${constraints.max.toLocaleString()}`;
@@ -1310,6 +1324,22 @@
         }
     }
 
+    // Identify the favorite(s) — the contestant(s) with the shortest (lowest-decimal) odds.
+    // Returns a human-readable note for display next to a "favorite finishes top 3?" prop.
+    function favoriteNote(contestants) {
+        const withOdds = (contestants || []).filter(c => c && c.odds != null && c.odds !== '');
+        if (!withOdds.length) return 'Set the field odds to determine the favorite.';
+        let min = Infinity;
+        withOdds.forEach(c => {
+            const d = window.PoolConfig.parseOdds(c.odds).decimal;
+            if (d < min) min = d;
+        });
+        const favs = withOdds.filter(c => window.PoolConfig.parseOdds(c.odds).decimal === min);
+        const fmt = c => `#${c.id} ${escapeHtml(c.name)} (${escapeHtml(c.odds)})`;
+        if (favs.length === 1) return `Favorite by the odds: <strong>${fmt(favs[0])}</strong>`;
+        return `Co-favorites by the odds: ${favs.map(fmt).join(', ')}`;
+    }
+
     function optionFor(contestant, currentValue) {
         const sel = Number(currentValue) === Number(contestant.id) ? 'selected' : '';
         return `<option value="${contestant.id}" ${sel}>#${contestant.id} ${escapeHtml(contestant.name)} (${escapeHtml(contestant.odds)})</option>`;
@@ -1404,7 +1434,7 @@
             }
             const allPicked = (activeEvent.poolConfig.questions || []).every(pickHasRequiredValue);
             if (!allPicked) {
-                flashMessage('Pick a horse for every bet before locking in.', 'red');
+                flashMessage('Make a pick for every bet before locking in.', 'red');
                 return;
             }
 
