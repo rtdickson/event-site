@@ -896,6 +896,83 @@
     color: #555;
 }
 
+/* Pool Settings card (money + timing, editable inline in Setup tab) */
+.pool-settings-block {
+    border-color: #d4a843;
+    background: #fffdf7;
+}
+
+.pool-settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px 16px;
+    align-items: end;
+}
+
+.pool-set-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #555;
+}
+
+.pool-set-field input {
+    padding: 7px 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 400;
+}
+
+.pool-set-field input:focus {
+    outline: none;
+    border-color: #d4a843;
+    box-shadow: 0 0 0 2px rgba(212, 168, 67, 0.2);
+}
+
+.pool-set-readonly {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+    padding: 4px 0;
+}
+
+.pool-set-rolabel {
+    font-weight: 600;
+    color: #555;
+}
+
+.pool-set-rovalue {
+    font-size: 14px;
+    color: #222;
+}
+
+.pool-set-editlink {
+    font-size: 11px;
+    color: #1565c0;
+    text-decoration: none;
+}
+
+.pool-set-editlink:hover { text-decoration: underline; }
+
+.pool-settings-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.pool-settings-foot #pool-settings-pot {
+    font-weight: 600;
+    color: #2e7d32;
+    margin: 0;
+}
+
 .pool-full-finish-section h4 {
     margin: 0 0 4px;
     font-size: 14px;

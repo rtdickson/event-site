@@ -411,10 +411,134 @@
         });
     }
 
+    // ----- Pool Settings (money + timing, editable inline in the Setup tab) -----
+    let lastEntryCount = 0;
+
+    function updatePotDisplay() {
+        const el = document.getElementById('pool-settings-pot');
+        if (!el) return;
+        const buyIn = currentPoolEvent && currentPoolEvent.poolConfig && currentPoolEvent.poolConfig.buyIn;
+        if (!buyIn || buyIn <= 0) { el.textContent = ''; return; }
+        const pot = lastEntryCount * buyIn;
+        el.textContent = `💵 Pot: ${lastEntryCount} player${lastEntryCount === 1 ? '' : 's'} × $${buyIn} = $${pot.toLocaleString()}`;
+    }
+
+    function renderPoolSettings() {
+        const body = document.getElementById('pool-settings-body');
+        if (!body || !currentPoolEvent) return;
+        const cfg = currentPoolEvent.poolConfig || {};
+        const isAlloc = window.PoolConfig.isAllocationMode(cfg);
+        const c = cfg.allocationConstraints || {};
+        const raceTime = currentPoolEvent.date || currentPoolEvent.dateRaw || '— not set —';
+        const closesRaw = cfg.closesAtRaw || '';
+        const buyIn = (cfg.buyIn != null) ? cfg.buyIn : '';
+
+        const allocFields = isAlloc ? `
+            <label class="pool-set-field">
+                <span>Fantasy bankroll / player ($)</span>
+                <input type="number" id="pool-set-bankroll" min="100" step="100" value="${cfg.bankrollAmount != null ? cfg.bankrollAmount : 5000}" />
+            </label>
+            <label class="pool-set-field">
+                <span>Min per bet ($)</span>
+                <input type="number" id="pool-set-min" min="0" step="50" value="${c.min != null ? c.min : 250}" />
+            </label>
+            <label class="pool-set-field">
+                <span>Max per bet ($)</span>
+                <input type="number" id="pool-set-max" min="100" step="100" value="${c.max != null ? c.max : 2000}" />
+            </label>
+            <label class="pool-set-field">
+                <span>Step size ($ per +/−)</span>
+                <input type="number" id="pool-set-step" min="25" step="25" value="${c.increment != null ? c.increment : 50}" />
+            </label>` : `
+            <label class="pool-set-field">
+                <span>Fixed stake / pick ($ fun money)</span>
+                <input type="number" id="pool-set-stake" min="1" value="${cfg.defaultStake != null ? cfg.defaultStake : 100}" />
+            </label>`;
+
+        body.innerHTML = `
+            <div class="pool-settings-grid">
+                <div class="pool-set-readonly">
+                    <span class="pool-set-rolabel">Race time</span>
+                    <span class="pool-set-rovalue">${escapeHtml(String(raceTime))}</span>
+                    <a href="#" id="pool-set-edit-race" class="pool-set-editlink">Edit in Event Manager →</a>
+                </div>
+                <label class="pool-set-field">
+                    <span>Picks lock at</span>
+                    <input type="datetime-local" id="pool-set-closes" value="${escapeHtml(closesRaw)}" />
+                </label>
+                <label class="pool-set-field">
+                    <span>Real buy-in / player ($)</span>
+                    <input type="number" id="pool-set-buyin" min="0" step="1" placeholder="e.g. 10" value="${buyIn}" />
+                </label>
+                ${allocFields}
+            </div>
+            <div class="pool-settings-foot">
+                <span id="pool-settings-pot" class="pool-admin-help"></span>
+                <span id="pool-settings-msg" class="pool-admin-help"></span>
+            </div>`;
+
+        const editRace = document.getElementById('pool-set-edit-race');
+        if (editRace) editRace.addEventListener('click', (e) => {
+            e.preventDefault();
+            const link = document.querySelector('.sidebar-link[data-panel="events"]');
+            if (link) link.click();
+        });
+
+        const msg = document.getElementById('pool-settings-msg');
+        const flash = (t) => { if (msg) { msg.textContent = t; msg.style.color = 'green'; } };
+        const wire = (id, handler) => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', () => handler(el));
+        };
+
+        // Picks lock time → closesAt (Timestamp) + closesAtRaw (string)
+        wire('pool-set-closes', async (el) => {
+            const raw = el.value;
+            const patch = raw
+                ? { closesAtRaw: raw, closesAt: firebase.firestore.Timestamp.fromDate(new Date(raw)) }
+                : { closesAtRaw: '', closesAt: null };
+            await savePoolConfig(patch);
+            renderHeader();
+            flash('✓ Lock time saved');
+        });
+
+        // Real-money buy-in per player (informational — drives the pot total)
+        wire('pool-set-buyin', async (el) => {
+            const n = parseInt(el.value, 10);
+            await savePoolConfig({ buyIn: (Number.isFinite(n) && n >= 0) ? n : null });
+            flash('✓ Buy-in saved');
+            updatePotDisplay();
+        });
+
+        if (isAlloc) {
+            wire('pool-set-bankroll', async (el) => {
+                await savePoolConfig({ bankrollAmount: parseInt(el.value, 10) || 5000 });
+                flash('✓ Bankroll saved');
+            });
+            const saveConstraints = async () => {
+                await savePoolConfig({ allocationConstraints: {
+                    min: parseInt(document.getElementById('pool-set-min').value, 10) || 250,
+                    max: parseInt(document.getElementById('pool-set-max').value, 10) || 2000,
+                    increment: parseInt(document.getElementById('pool-set-step').value, 10) || 50
+                } });
+                flash('✓ Bet limits saved');
+            };
+            ['pool-set-min', 'pool-set-max', 'pool-set-step'].forEach(id => wire(id, saveConstraints));
+        } else {
+            wire('pool-set-stake', async (el) => {
+                await savePoolConfig({ defaultStake: parseInt(el.value, 10) || 100 });
+                flash('✓ Stake saved');
+            });
+        }
+
+        updatePotDisplay();
+    }
+
     // ----- Render orchestrator -----
     function renderAll() {
         wirePoolTabs();
         renderHeader();
+        renderPoolSettings();
         renderContestants();
         renderQuestions();
         renderEntries();
@@ -530,11 +654,15 @@
             const sealedDisplay = seal.sealedAtIso
                 ? new Date(seal.sealedAtIso).toLocaleString()
                 : (seal.sealedAt && seal.sealedAt.toDate ? seal.sealedAt.toDate().toLocaleString() : 'unknown');
+            const autoNote = seal.auto ? ' <span class="pool-muted-badge" title="Sealed automatically when betting closed">⚙️ auto</span>' : '';
+            const snapshotLink = seal.url
+                ? `<a href="${escapeHtml(seal.url)}" target="_blank" rel="noopener">View snapshot JSON →</a>`
+                : '<span class="pool-admin-help" style="margin:0;">Snapshot stored in the sealed record (verifiable on the event page).</span>';
             status.innerHTML = `
                 <div class="pool-audit-current">
-                    🔒 <strong>Sealed</strong> at ${escapeHtml(sealedDisplay)} · ${seal.entryCount} entries
+                    🔒 <strong>Sealed</strong> at ${escapeHtml(sealedDisplay)} · ${seal.entryCount} entries${autoNote}
                     <div class="pool-audit-hash">SHA-256: <code>${escapeHtml(seal.hash)}</code></div>
-                    <a href="${escapeHtml(seal.url)}" target="_blank" rel="noopener">View snapshot JSON →</a>
+                    ${snapshotLink}
                 </div>
             `;
             btn.textContent = 'Re-seal Entries';
@@ -1114,6 +1242,8 @@
             const snap = await db.collection(currentPoolEvent.collectionName)
                 .orderBy('timestamp', 'desc')
                 .get();
+            lastEntryCount = snap.size;
+            updatePotDisplay();
             if (snap.empty) {
                 container.innerHTML = '<p class="pool-admin-help">No entries yet.</p>';
                 return;

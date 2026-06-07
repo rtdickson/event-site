@@ -5,6 +5,7 @@ const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const admin = require('firebase-admin');
 const twilio = require('twilio');
 const cors = require('cors');
+const crypto = require('crypto');
 const PoolConfig = require('./pool-config.js');
 
 const corsOptions = {
@@ -1249,6 +1250,67 @@ function isPastClose(eventData) {
     return Date.now() > ms + CLOSE_GRACE_MS;
 }
 
+// ----- Server-side audit seal (mirrors pool-audit.js canonicalization) -----
+// Kept byte-compatible with the browser sealer so the public verifier validates
+// either kind: same payload shape, same key-sorting, same JSON.stringify(…, null, 2).
+function auditCanonicalize(obj) {
+    if (Array.isArray(obj)) return obj.map(auditCanonicalize);
+    if (obj && typeof obj === 'object' && obj.constructor === Object) {
+        const sorted = {};
+        Object.keys(obj).sort().forEach(k => { sorted[k] = auditCanonicalize(obj[k]); });
+        return sorted;
+    }
+    return obj;
+}
+function auditEssentialEntry(e) {
+    return {
+        phone: e.phone || '',
+        name: e.name || '',
+        picks: e.picks || {},
+        locks: Array.isArray(e.locks) ? e.locks.slice().sort() : []
+    };
+}
+function auditBuildCanonicalJson(entries, meta) {
+    const sorted = entries.slice().sort((a, b) => (a.phone || '').localeCompare(b.phone || ''));
+    const payload = {
+        version: 1,
+        eventId: meta.eventId,
+        eventName: meta.eventName,
+        sealedAt: meta.sealedAtIso,
+        entryCount: sorted.length,
+        entries: sorted.map(auditEssentialEntry)
+    };
+    return JSON.stringify(auditCanonicalize(payload), null, 2);
+}
+
+// Build an audit-seal object from an event's current entries, or null if there's
+// nothing to seal. Caller writes it onto the event doc.
+async function buildAuditSeal(eventId, eventData) {
+    const collectionName = eventData.collectionName;
+    if (!collectionName) return null;
+    const snap = await db.collection(collectionName).get();
+    const entries = snap.docs.map(d => d.data());
+    if (entries.length === 0) return null;
+    const sealedAtIso = new Date().toISOString();
+    const canonicalStr = auditBuildCanonicalJson(entries, {
+        eventId,
+        eventName: eventData.name || 'Unnamed event',
+        sealedAtIso
+    });
+    const hash = crypto.createHash('sha256').update(canonicalStr, 'utf8').digest('hex');
+    return {
+        hash,
+        url: null,
+        path: null,
+        sealedAt: admin.firestore.Timestamp.fromDate(new Date(sealedAtIso)),
+        sealedAtIso,
+        entryCount: entries.length,
+        snapshotJson: canonicalStr,
+        version: 2,
+        auto: true
+    };
+}
+
 // Runs every 5 minutes — flips any 'accepting' events whose closesAt has passed.
 exports.lifecycleTickToLocked = onSchedule({ schedule: 'every 5 minutes', timeoutSeconds: 60 }, async () => {
     try {
@@ -1259,7 +1321,23 @@ exports.lifecycleTickToLocked = onSchedule({ schedule: 'every 5 minutes', timeou
             if (!isPastClose(data)) continue;
             // Pool events flip to 'locked'; gatherings go straight to 'complete' after their event date.
             const nextState = (data.type === 'pool') ? 'locked' : 'complete';
-            await doc.ref.update({ lifecycle: nextState, lifecycleAutoTransitionedAt: admin.firestore.FieldValue.serverTimestamp() });
+            const update = { lifecycle: nextState, lifecycleAutoTransitionedAt: admin.firestore.FieldValue.serverTimestamp() };
+
+            // Auto-seal a pool as it locks — but only if no seal exists yet (manual seal wins).
+            if (data.type === 'pool' && !data.auditSeal) {
+                try {
+                    const seal = await buildAuditSeal(doc.id, data);
+                    if (seal) {
+                        update.auditSeal = seal;
+                        console.log(`[lifecycleTick] auto-sealed ${data.name}: ${seal.entryCount} entries, ${seal.hash.slice(0, 12)}…`);
+                    }
+                } catch (sealErr) {
+                    // Never block the lock transition on a seal failure.
+                    console.error(`[lifecycleTick] auto-seal failed for ${data.name}:`, sealErr);
+                }
+            }
+
+            await doc.ref.update(update);
             console.log(`[lifecycleTick] ${data.name} (${data.eventCode}): accepting → ${nextState}`);
             flipped++;
         }
