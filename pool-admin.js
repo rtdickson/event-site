@@ -1555,6 +1555,47 @@
     }
 
     // ----- Standings -----
+    // Short, chip-friendly label for a bet (no horse names — just the market).
+    function shortBetLabel(q) {
+        const map = {
+            win: 'Win', place: 'Place', show: 'Show',
+            tri: 'Trifecta', box3: 'Top-3 Box', longshot: 'Long Shot',
+            fav: 'Favorite', time: 'O/U Time', timeou: 'O/U Time', marginou: 'O/U Margin'
+        };
+        if (map[q.id]) return map[q.id];
+        const label = q.label || q.id || 'Bet';
+        return label.length > 18 ? label.slice(0, 17) + '…' : label;
+    }
+
+    // Row of chips for a player's slip: a green chip for each bet they HIT (with payoff),
+    // a muted chip for bets they played but missed. Bets they didn't play are omitted.
+    function betChipsFor(r, questions, isAlloc) {
+        const PC = window.PoolConfig;
+        const byId = {};
+        (r.score.perQuestion || []).forEach(p => { byId[p.questionId] = p; });
+        const chips = [];
+        questions.forEach(q => {
+            const raw = r.picks[q.id];
+            const stake = PC.getPickStake(raw);
+            const val = PC.getPickValue(raw);
+            // "Played" = staked in allocation mode, or has a pick value in fixed mode.
+            const played = isAlloc
+                ? (stake !== null && stake > 0)
+                : (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.every(x => x == null)));
+            if (!played) return;
+            const pq = byId[q.id];
+            if (!pq || !pq.hit) return; // only show winning bets
+            const label = escapeHtml(shortBetLabel(q));
+            const amt = pq.payoff ? ` +$${pq.payoff.toLocaleString()}` : '';
+            chips.push(`<span class="pool-bet-chip pool-bet-chip-hit">✓ ${label}${amt}</span>`);
+        });
+        // Parlay bonus (fixed-stake pools)
+        if (!isAlloc && r.score.parlay && r.score.parlay.hit) {
+            chips.push(`<span class="pool-bet-chip pool-bet-chip-hit">✓ Parlay +$${(r.score.parlay.bonus || 0).toLocaleString()}</span>`);
+        }
+        return chips.length ? `<div class="pool-bet-chips">${chips.join('')}</div>` : '<span class="pool-admin-help" style="margin:0;">No bets hit.</span>';
+    }
+
     async function renderStandings() {
         const container = document.getElementById('pool-standings');
         if (!container || !currentPoolEvent) return;
@@ -1576,7 +1617,7 @@
                 const tieBreak = PC.triCloseness(entry, currentPoolEvent.poolConfig);
                 const winStake = isAlloc ? PC.totalWinningStake(entry, currentPoolEvent.poolConfig, contestants) : 0;
                 const tbCloseness = PC.tiebreakerCloseness ? PC.tiebreakerCloseness(entry, currentPoolEvent.poolConfig) : null;
-                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak, winStake, tbCloseness };
+                return { name: entry.name || 'Unknown', phone: entry.phone, score, tieBreak, winStake, tbCloseness, picks: entry.picks || {} };
             }).sort((a, b) => {
                 if (b.score.bankroll !== a.score.bankroll) return b.score.bankroll - a.score.bankroll;
                 if (isAlloc) {
@@ -1636,16 +1677,21 @@
                     return base + tbColCell(r);
                 };
             }
+            const questions = currentPoolEvent.poolConfig.questions || [];
             container.innerHTML = '<h4 style="margin-bottom:8px;">Standings</h4>'
-                + `<p class="pool-admin-help" style="margin:0 0 8px;">${tieHelp}</p>`
-                + `<table class="pool-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th>${isAlloc ? '' : '<th>Parlay</th>'}${tieHeader}</tr></thead><tbody>`
+                + `<p class="pool-admin-help" style="margin:0 0 8px;">${tieHelp} <strong>Green chips</strong> show the bets each slip actually hit.</p>`
+                + `<table class="pool-table pool-standings-table"><thead><tr><th>#</th><th>Name</th><th>Bankroll</th>${isAlloc ? '' : '<th>Parlay</th>'}${tieHeader}</tr></thead><tbody>`
                 + ranked.map((r, i) => `
-                    <tr>
+                    <tr class="pool-standings-main-row">
                         <td>${i + 1}</td>
                         <td>${escapeHtml(r.name)}</td>
                         <td><strong>$${r.score.bankroll.toLocaleString()}</strong></td>
                         ${isAlloc ? '' : `<td>${r.score.parlay.attempted ? (r.score.parlay.hit ? `✓ +$${r.score.parlay.bonus}` : '✗') : ''}</td>`}
                         ${tieCell(r)}
+                    </tr>
+                    <tr class="pool-standings-bets-row">
+                        <td></td>
+                        <td colspan="99">${betChipsFor(r, questions, isAlloc)}</td>
                     </tr>
                 `).join('') + '</tbody></table>';
         } catch (err) {

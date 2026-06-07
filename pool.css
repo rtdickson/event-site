@@ -973,6 +973,46 @@
     margin: 0;
 }
 
+/* Standings: per-slip bet chips (which bets each player hit) */
+.pool-standings-main-row td {
+    border-bottom: none;
+    padding-bottom: 2px;
+}
+
+.pool-standings-bets-row td {
+    padding-top: 0;
+    padding-bottom: 10px;
+    border-top: none;
+}
+
+.pool-bet-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+}
+
+.pool-bet-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.pool-bet-chip-hit {
+    background: #2e7d32;
+    color: #fff;
+}
+
+.pool-bet-chip-miss {
+    background: #eee;
+    color: #999;
+    font-weight: 400;
+    text-decoration: line-through;
+}
+
 .pool-full-finish-section h4 {
     margin: 0 0 4px;
     font-size: 14px;
