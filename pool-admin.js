@@ -376,10 +376,44 @@
         await db.collection('events').doc(currentPoolEventId).update({
             poolConfig: currentPoolEvent.poolConfig
         });
+        showSavedToast();
+    }
+
+    // Global "✓ Saved" confirmation. Every savePoolConfig() flashes this so the admin
+    // always knows a change persisted — no per-section save buttons or guesswork.
+    let _savedToastEl = null;
+    let _savedToastTimer = null;
+    function showSavedToast() {
+        if (!_savedToastEl) {
+            _savedToastEl = document.createElement('div');
+            _savedToastEl.className = 'pool-saved-toast';
+            _savedToastEl.textContent = '✓ Saved';
+            document.body.appendChild(_savedToastEl);
+        }
+        _savedToastEl.classList.add('show');
+        if (_savedToastTimer) clearTimeout(_savedToastTimer);
+        _savedToastTimer = setTimeout(() => _savedToastEl.classList.remove('show'), 1400);
+    }
+
+    // ----- Pool sub-tabs (Setup / Race Results / Manage) -----
+    function wirePoolTabs() {
+        const tabs = document.getElementById('pool-tabs');
+        if (!tabs || tabs.dataset.wired) return;
+        tabs.dataset.wired = '1';
+        tabs.querySelectorAll('.pool-tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const target = btn.getAttribute('data-pooltab');
+                tabs.querySelectorAll('.pool-tab-btn').forEach(b =>
+                    b.classList.toggle('active', b === btn));
+                document.querySelectorAll('[data-pooltab-panel]').forEach(panel =>
+                    panel.classList.toggle('active', panel.getAttribute('data-pooltab-panel') === target));
+            });
+        });
     }
 
     // ----- Render orchestrator -----
     function renderAll() {
+        wirePoolTabs();
         renderHeader();
         renderContestants();
         renderQuestions();
@@ -402,19 +436,19 @@
         block.style.display = 'block';
 
         const input = document.getElementById('pool-overunder-input');
-        const btn = document.getElementById('pool-overunder-save-btn');
         const msg = document.getElementById('pool-overunder-msg');
         if (input) input.value = ouQ.line || '';
 
-        if (btn && !btn.dataset.wired) {
-            btn.dataset.wired = '1';
-            btn.addEventListener('click', async () => {
+        // Auto-save on blur/change — no separate Save button.
+        if (input && !input.dataset.wired) {
+            input.dataset.wired = '1';
+            input.addEventListener('change', async () => {
                 const newLine = input.value.trim();
                 if (!newLine) { msg.textContent = 'Enter a line.'; msg.style.color = 'red'; return; }
-                // Update the question's line in place
-                const updated = questions.map(q => q.kind === 'overUnder' ? Object.assign({}, q, { line: newLine }) : q);
+                const current = currentPoolEvent.poolConfig.questions || [];
+                const updated = current.map(q => q.kind === 'overUnder' ? Object.assign({}, q, { line: newLine }) : q);
                 await savePoolConfig({ questions: updated });
-                msg.textContent = `Line set to ${newLine}.`;
+                msg.textContent = `✓ Line set to ${newLine}`;
                 msg.style.color = 'green';
             });
         }
@@ -446,39 +480,41 @@
             `).join('')
             + '</div>';
 
-        const saveBtn = document.getElementById('pool-longshot-save-btn');
         const autoBtn = document.getElementById('pool-longshot-auto-btn');
         const msg = document.getElementById('pool-longshot-msg');
 
-        if (saveBtn && !saveBtn.dataset.wired) {
-            saveBtn.dataset.wired = '1';
-            saveBtn.addEventListener('click', async () => {
-                const checked = Array.from(list.querySelectorAll('input[type=checkbox]:checked'))
-                    .map(cb => parseInt(cb.getAttribute('data-qualifier-id'), 10))
-                    .filter(Number.isFinite);
-                await savePoolConfig({ longshotQualifiers: checked });
-                msg.textContent = `Saved ${checked.length} qualifier${checked.length === 1 ? '' : 's'}.`;
-                msg.style.color = 'green';
-                renderStandings();
-            });
+        // Persist whatever's currently checked. Called on every checkbox toggle and
+        // after auto-suggest — no separate Save button.
+        async function saveQualifiers() {
+            const checked = Array.from(list.querySelectorAll('input[type=checkbox]:checked'))
+                .map(cb => parseInt(cb.getAttribute('data-qualifier-id'), 10))
+                .filter(Number.isFinite);
+            await savePoolConfig({ longshotQualifiers: checked });
+            msg.textContent = `✓ ${checked.length} qualifier${checked.length === 1 ? '' : 's'} saved`;
+            msg.style.color = 'green';
+            renderStandings();
         }
+
+        // Checkboxes are re-created each render, so wire them fresh each time.
+        list.querySelectorAll('input[type=checkbox]').forEach(cb => {
+            cb.addEventListener('change', saveQualifiers);
+        });
+
         if (autoBtn && !autoBtn.dataset.wired) {
             autoBtn.dataset.wired = '1';
             autoBtn.addEventListener('click', () => {
-                // Check every contestant with morning-line odds >= 15:1
+                // Check every contestant with morning-line odds >= 15:1, then save.
                 const PC = window.PoolConfig;
                 let n = 0;
                 list.querySelectorAll('input[type=checkbox]').forEach(cb => {
                     const id = parseInt(cb.getAttribute('data-qualifier-id'), 10);
-                    const c = contestants.find(c => Number(c.id) === id);
+                    const c = (currentPoolEvent.poolConfig.contestants || []).find(c => Number(c.id) === id);
                     if (!c) return;
-                    const odds = PC.parseOdds(c.odds);
-                    const qualifies = odds.decimal >= 15;
+                    const qualifies = PC.parseOdds(c.odds).decimal >= 15;
                     cb.checked = qualifies;
                     if (qualifies) n++;
                 });
-                msg.textContent = `Suggested ${n} qualifier${n === 1 ? '' : 's'} from current odds (15:1+). Review then click Save.`;
-                msg.style.color = '#666';
+                saveQualifiers();
             });
         }
     }
@@ -1259,7 +1295,6 @@
 
         // Full finish order entry
         const finishInput = document.getElementById('pool-full-finish-input');
-        const finishBtn = document.getElementById('pool-save-finish-btn');
         const finishMsg = document.getElementById('pool-finish-msg');
         if (finishInput && currentPoolEvent.poolConfig.fullFinish) {
             finishInput.value = (currentPoolEvent.poolConfig.fullFinish || []).join(', ');
@@ -1285,14 +1320,20 @@
             });
         }
 
-        if (finishBtn && !finishBtn.dataset.wired) {
-            finishBtn.dataset.wired = '1';
-            finishBtn.addEventListener('click', async () => {
+        // Auto-save on blur/change (no separate Save button). Validation errors block the
+        // save and show inline; a clean parse persists and re-sorts standings.
+        if (finishInput && !finishInput.dataset.wired) {
+            finishInput.dataset.wired = '1';
+            finishInput.addEventListener('change', async () => {
                 const raw = finishInput.value.trim();
                 if (!raw) {
-                    if (!confirm('Clear the full finish order?')) return;
+                    if (currentPoolEvent.poolConfig.fullFinish == null) { finishMsg.textContent = ''; return; }
+                    if (!confirm('Clear the full finish order?')) {
+                        finishInput.value = (currentPoolEvent.poolConfig.fullFinish || []).join(', ');
+                        return;
+                    }
                     await savePoolConfig({ fullFinish: null });
-                    finishMsg.textContent = 'Cleared.';
+                    finishMsg.textContent = '✓ Cleared.';
                     finishMsg.style.color = '#666';
                     renderStandings();
                     return;
@@ -1318,7 +1359,7 @@
                     return;
                 }
                 await savePoolConfig({ fullFinish: ids });
-                finishMsg.textContent = `Saved ${ids.length} positions. Standings re-sorted with new tiebreaker.`;
+                finishMsg.textContent = `✓ Saved ${ids.length} positions. Standings re-sorted with new tiebreaker.`;
                 finishMsg.style.color = 'green';
                 renderStandings();
             });
