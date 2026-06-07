@@ -1013,6 +1013,15 @@
     text-decoration: line-through;
 }
 
+/* Public standings: winning-bet chips inside the entry summary (spans the grid) */
+.pool-entry-winchips {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 4px;
+}
+
 .pool-full-finish-section h4 {
     margin: 0 0 4px;
     font-size: 14px;

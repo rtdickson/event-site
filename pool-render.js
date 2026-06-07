@@ -250,6 +250,7 @@
                             <span class="pool-entry-name">${winnerBadge}<strong>${escapeHtml(displayName)}</strong>${tiedBadge}${hasLocks ? ' <span class="pool-tag">parlay</span>' : ''}</span>
                             <span class="pool-entry-amount">${amountStr}</span>
                             <span class="pool-entry-toggle">▾</span>
+                            ${hasResults ? winChipsFor(data, config, score) : ''}
                         </summary>
                         <div class="pool-entry-detail">${detail}</div>
                     </details>
@@ -626,6 +627,48 @@
         }
 
         return `<ul class="pool-detail-list">${lines.join('')}${parlayLine}${tiebreakerLines}${footerLine}</ul>`;
+    }
+
+    // Short, chip-friendly label for a bet (no horse names — just the market).
+    function shortBetLabel(q) {
+        const map = {
+            win: 'Win', place: 'Place', show: 'Show',
+            tri: 'Trifecta', box3: 'Top-3 Box', longshot: 'Long Shot',
+            fav: 'Favorite', time: 'O/U Time', timeou: 'O/U Time', marginou: 'O/U Margin'
+        };
+        if (map[q.id]) return map[q.id];
+        const label = q.label || q.id || 'Bet';
+        return label.length > 18 ? label.slice(0, 17) + '…' : label;
+    }
+
+    // Green chips for the bets a slip actually hit — shown in the public standings summary
+    // once results are in. Market name only (no horse numbers); winners only.
+    function winChipsFor(data, config, score) {
+        if (!score) return '';
+        const PC = window.PoolConfig;
+        const isAlloc = PC.isAllocationMode(config);
+        const questions = config.questions || [];
+        const picks = data.picks || {};
+        const byId = {};
+        (score.perQuestion || []).forEach(p => { byId[p.questionId] = p; });
+        const chips = [];
+        questions.forEach(q => {
+            const raw = picks[q.id];
+            const stake = PC.getPickStake(raw);
+            const val = PC.getPickValue(raw);
+            const played = isAlloc
+                ? (stake !== null && stake > 0)
+                : (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.every(x => x == null)));
+            if (!played) return;
+            const pq = byId[q.id];
+            if (!pq || !pq.hit) return;
+            const amt = pq.payoff ? ` +$${pq.payoff.toLocaleString()}` : '';
+            chips.push(`<span class="pool-bet-chip pool-bet-chip-hit">✓ ${escapeHtml(shortBetLabel(q))}${amt}</span>`);
+        });
+        if (!isAlloc && score.parlay && score.parlay.hit) {
+            chips.push(`<span class="pool-bet-chip pool-bet-chip-hit">✓ Parlay +$${(score.parlay.bonus || 0).toLocaleString()}</span>`);
+        }
+        return chips.length ? `<div class="pool-entry-winchips">${chips.join('')}</div>` : '';
     }
 
     function formatPickValue(q, rawV, contestantsById) {
