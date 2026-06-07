@@ -562,6 +562,9 @@ async function loadEventOptions() {
             option.setAttribute('data-event-type', data.type || 'gathering');
             option.setAttribute('data-event-code', data.eventCode || '');
             option.setAttribute('data-is-rsvp-only', 'false');
+            // Pool details for the auto-populated invite blurb (real buy-in + picks-lock time)
+            option.setAttribute('data-buyin', (data.poolConfig && data.poolConfig.buyIn != null) ? data.poolConfig.buyIn : '');
+            option.setAttribute('data-closes', (data.poolConfig && data.poolConfig.closesAtRaw) ? data.poolConfig.closesAtRaw : '');
             if (isFeaturedDoc(doc)) {
                 option.textContent += ' ★';
                 // Auto-select first featured if no RSVP-only option above
@@ -736,6 +739,17 @@ function setupEventChangeListener() {
     eventSelect.addEventListener('change', handleEventChange);
 }
 
+// Format a datetime-local string (e.g. "2026-06-06T18:45") into a short, friendly
+// lock time for the invite blurb, e.g. "Sat, Jun 6 at 6:45 PM". Empty string if unset/invalid.
+function formatInviteLockTime(raw) {
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return `${day} at ${time}`;
+}
+
 // 5. Update the updateDefaultMessage function to handle RSVP-only messaging
 function updateDefaultMessage() {
     const eventSelect = document.getElementById('event-select');
@@ -771,9 +785,18 @@ Thanks for being in!`;
             ? `https://75pinegrove.com/how-the-math-works.html?event=${eventId}`
             : 'https://75pinegrove.com/how-the-math-works.html';
         const codeSuffix = codeUpper ? ' ' + codeUpper : '';
+
+        // Auto-populate the key logistics so they aren't forgotten: real buy-in + lock time.
+        const buyInNum = parseInt(selectedOption ? selectedOption.getAttribute('data-buyin') : '', 10);
+        const lockStr = formatInviteLockTime(selectedOption ? selectedOption.getAttribute('data-closes') : '');
+        const blurbParts = [];
+        if (Number.isFinite(buyInNum) && buyInNum > 0) blurbParts.push(`💵 Buy-in: $${buyInNum} (real money — settle up after)`);
+        if (lockStr) blurbParts.push(`🔒 Picks lock ${lockStr}`);
+        const poolBlurb = blurbParts.length ? blurbParts.join('\n') + '\n\n' : '';
+
         defaultMessage = `You're in for ${eventName} — friends-only pool at Pine Grove Gatherings!
 
-Allocate your bankroll across the bet slip. Make your picks before lock:
+${poolBlurb}Allocate your bankroll across the bet slip. Make your picks before lock:
 ${eventLink}
 
 How it works: ${mathLink}
