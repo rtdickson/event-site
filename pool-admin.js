@@ -1095,7 +1095,9 @@
                 const phoneNorm = String(data.phone || '').replace(/\D/g, '').slice(-10);
                 const isMuted = phoneNorm && mutedNorm.includes(phoneNorm);
                 const pickSummary = Object.entries(picks).map(([qid, pick]) => {
-                    return `<span class="pool-pick-chip">${escapeHtml(qid)}: ${formatPick(pick, contestantsById)}${locks.includes(qid) ? ' 🔒' : ''}</span>`;
+                    const stake = window.PoolConfig.getPickStake(pick);
+                    const stakeStr = (stake !== null && stake > 0) ? ` $${stake.toLocaleString()}` : '';
+                    return `<span class="pool-pick-chip">${escapeHtml(qid)}: ${formatPick(pick, contestantsById)}${stakeStr}${locks.includes(qid) ? ' 🔒' : ''}</span>`;
                 }).join(' ');
                 return `
                     <tr>
@@ -1124,12 +1126,15 @@
     }
 
     function formatPick(pick, contestantsById) {
-        if (Array.isArray(pick)) {
-            return pick.map(p => formatPick(p, contestantsById)).join('-');
+        // Allocation-mode picks are wrapped as { value, stake } — unwrap to the
+        // underlying selection before formatting (otherwise we render "[object Object]").
+        const value = window.PoolConfig.getPickValue(pick);
+        if (Array.isArray(value)) {
+            return value.map(p => formatPick(p, contestantsById)).join('-');
         }
-        const c = contestantsById[Number(pick)];
+        const c = contestantsById[Number(value)];
         if (c) return `#${c.id} ${escapeHtml(c.name)}`;
-        return escapeHtml(String(pick));
+        return escapeHtml(String(value));
     }
 
     // ----- Results form -----
