@@ -880,6 +880,22 @@
     border-top: 1px dashed #ccc;
 }
 
+/* Finish Order promoted to the primary input at the top of Race Results */
+.pool-full-finish-section.pool-finish-primary {
+    margin-top: 10px;
+    margin-bottom: 18px;
+    padding: 12px 14px;
+    border: 1px solid #d4a843;
+    border-radius: 6px;
+    background: #fbf7ec;
+}
+
+.pool-results-subhead {
+    margin: 4px 0 8px;
+    font-size: 14px;
+    color: #555;
+}
+
 .pool-full-finish-section h4 {
     margin: 0 0 4px;
     font-size: 14px;

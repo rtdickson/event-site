@@ -393,19 +393,21 @@
                                 <div class="pool-admin-grid">
                                     <div class="pool-admin-block pool-results-block">
                                         <h3>Results &amp; Standings</h3>
-                                        <p class="pool-admin-help">Enter results after the race. Standings are computed from the entries.</p>
-                                        <form id="pool-results-form"></form>
-                                        <div id="pool-standings"></div>
+                                        <p class="pool-admin-help">Enter the finish order first — it's the key result for the race. Standings are computed from the entries.</p>
 
-                                        <div class="pool-full-finish-section">
-                                            <h4>Full Finish Order (for tiebreaker)</h4>
-                                            <p class="pool-admin-help">Comma-separated horse numbers in order from 1st place to last. Used for the granular tiebreaker ladder (positional error, exacta closeness). Saves when you click away; leave blank to fall back to set/exact-match math.</p>
+                                        <div class="pool-full-finish-section pool-finish-primary">
+                                            <h4>① Finish Order</h4>
+                                            <p class="pool-admin-help">Every horse number in order of finish, 1st place to last (comma-separated). In bankroll pools this drives <strong>all</strong> position-based results — Top 5, Trifecta, Exacta, Long Shot — plus the tiebreaker ladder. Saves when you click away.</p>
                                             <textarea id="pool-full-finish-input" rows="2" placeholder="19, 1, 22, 4, 8, ..."></textarea>
                                             <div style="margin-top:6px;">
                                                 <button type="button" id="pool-prefill-finish-btn" class="pool-secondary-btn">Prefill top 3 from results</button>
                                                 <span id="pool-finish-msg" class="pool-admin-help" style="margin-left:10px;"></span>
                                             </div>
                                         </div>
+
+                                        <h4 class="pool-results-subhead">② Props &amp; other results</h4>
+                                        <form id="pool-results-form"></form>
+                                        <div id="pool-standings"></div>
                                     </div>
                                 </div>
                             </div>
